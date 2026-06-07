@@ -1,0 +1,2212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CHROME DELVER // クローム・デルヴァー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070a07; --bg2:#0c110b; --panel:#0e140d; --line:#1d2a1a;
+    --green:#5dff9b; --green-bright:#9dffc4; --green-dim:#2c6b46; --green-deep:#11331f;
+    --orange:#ff8a2b; --rust:#c9591f; --red:#ff4646; --amber:#ffc14d;
+    --txt:#a8e8c2; --txt-dim:#5c8a6e;
+    --mono:'Share Tech Mono', monospace; --disp:'Chakra Petch', sans-serif;
+    --ts: min(7vw, 30px);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:var(--mono);
+    background:
+      radial-gradient(ellipse at 50% -10%, #0f1a10 0%, transparent 55%),
+      radial-gradient(ellipse at 50% 120%, #160d05 0%, transparent 50%),
+      var(--bg);
+    color:var(--txt);
+    min-height:100dvh;
+    display:flex; flex-direction:column; align-items:center;
+    padding:8px 10px 12px;
+    overflow-x:hidden; position:relative; letter-spacing:.3px;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; z-index:9000; pointer-events:none;
+    background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.2) 3px 4px);
+    mix-blend-mode:multiply; animation:flick 6s steps(60) infinite;
+  }
+  body::after{
+    content:""; position:fixed; inset:0; z-index:9001; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(0,0,0,.5) 100%);
+  }
+  @keyframes flick{0%,97%{opacity:1}98%{opacity:.85}99%{opacity:.95}100%{opacity:1}}
+
+  .wrap{ width:100%; max-width:440px; display:flex; flex-direction:column; gap:8px; z-index:1;}
+
+  header{ text-align:center; position:relative; line-height:1;}
+  .logo{
+    font-family:var(--disp); font-weight:700; font-size:clamp(20px,5.5vw,30px);
+    letter-spacing:4px; color:var(--green-bright);
+    text-shadow:0 0 8px rgba(93,255,155,.5), 0 0 22px rgba(93,255,155,.2);
+  }
+  .logo .x{ color:var(--orange); text-shadow:0 0 10px rgba(255,138,43,.6);}
+  .subtitle{ font-family:var(--disp); font-size:9px; letter-spacing:5px; color:var(--txt-dim); margin-top:3px;}
+
+  /* ===== Map + overlays ===== */
+  .frame{
+    background:linear-gradient(180deg,var(--panel),var(--bg2));
+    border:1px solid var(--line); border-radius:7px; position:relative;
+    box-shadow:inset 0 0 30px rgba(0,0,0,.6);
+  }
+  #stageFrame{ overflow:hidden; }
+  #map{
+    display:grid; gap:1px; background:#040604; width:max-content; margin:0 auto;
+    grid-template-columns:repeat(15, var(--ts));
+  }
+  .cell{
+    width:var(--ts); height:var(--ts);
+    display:flex; align-items:center; justify-content:center;
+    font-size:calc(var(--ts) * .72); line-height:1; background:#060806; user-select:none;
+    transition:background .12s linear;
+  }
+  .cell.unseen{ background:#040504; color:transparent;}
+  .cell.dim{ filter:brightness(.4) saturate(.5);}
+  .cell.floor{ background:#0a0d09;}
+  .cell.wall{ background:#161009;}
+  .cell.stairs{ background:#0d130b;}
+  .cell.player{ background:#0d1a10; box-shadow:inset 0 0 10px rgba(93,255,155,.45); animation:ppulse 1.4s ease-in-out infinite;}
+  @keyframes ppulse{0%,100%{box-shadow:inset 0 0 8px rgba(93,255,155,.35)}50%{box-shadow:inset 0 0 16px rgba(93,255,155,.7)}}
+  .cell.enemy{ background:#1a0a0a; box-shadow:inset 0 0 9px rgba(255,70,70,.35);}
+  .cell.part{ background:#180f06; box-shadow:inset 0 0 9px rgba(255,138,43,.4);}
+  .cell.battery{ background:#101806; box-shadow:inset 0 0 9px rgba(255,193,77,.4);}
+  .cell.hit{ animation:hit .25s linear;}
+  @keyframes hit{0%{background:#3a0d0d}100%{background:#060806}}
+
+  /* HUD overlay */
+  .hud{
+    position:absolute; top:0; left:0; right:0; z-index:5; pointer-events:none;
+    display:flex; align-items:center; gap:8px; padding:6px 8px 14px;
+    background:linear-gradient(180deg, rgba(4,7,4,.94) 0%, rgba(4,7,4,.78) 55%, rgba(4,7,4,0) 100%);
+  }
+  .hud-depth{
+    font-family:var(--disp); font-weight:700; font-size:17px; color:var(--orange);
+    text-shadow:0 0 10px rgba(255,138,43,.5); letter-spacing:1px; min-width:34px;
+  }
+  .hud-bars{ flex:1; display:flex; flex-direction:column; gap:3px;}
+  .hbar{ display:flex; align-items:center; gap:6px;}
+  .hbar .hlab{ font-family:var(--disp); font-size:9px; letter-spacing:1px; color:var(--txt-dim); width:18px;}
+  .track{ flex:1; height:9px; background:rgba(0,0,0,.6); border:1px solid var(--line); border-radius:3px; overflow:hidden; position:relative;}
+  .fill{ height:100%; width:50%; transition:width .25s ease, background .25s; position:relative;}
+  .fill::after{ content:""; position:absolute; inset:0; background:repeating-linear-gradient(90deg,rgba(255,255,255,.12) 0 2px, transparent 2px 5px);}
+  .fill.hp{ background:linear-gradient(90deg,#1e9c52,#5dff9b); box-shadow:0 0 8px rgba(93,255,155,.5);}
+  .fill.hp.mid{ background:linear-gradient(90deg,#b06a16,#ffc14d); box-shadow:0 0 8px rgba(255,193,77,.5);}
+  .fill.hp.low{ background:linear-gradient(90deg,#8a1212,#ff4646); box-shadow:0 0 10px rgba(255,70,70,.6); animation:lowpulse .9s infinite;}
+  @keyframes lowpulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.4)}}
+  .fill.pw{ background:linear-gradient(90deg,#9a5210,#ff8a2b); box-shadow:0 0 8px rgba(255,138,43,.5);}
+  .fill.pw.empty{ background:#3a0d0d; box-shadow:0 0 8px rgba(255,70,70,.5); animation:lowpulse .9s infinite;}
+  .hbar .hnum{ font-size:10px; color:var(--green-bright); width:46px; text-align:right;}
+  .hud-atk{
+    font-family:var(--disp); font-weight:700; font-size:16px; color:var(--red);
+    text-shadow:0 0 10px rgba(255,70,70,.4); min-width:38px; text-align:right;
+  }
+  .hud-atk .a{ font-size:13px; margin-right:1px;}
+
+  /* Equipment overlay */
+  .equip{
+    position:absolute; bottom:0; left:0; right:0; z-index:5; pointer-events:none;
+    display:flex; justify-content:center; gap:7px; padding:16px 8px 7px;
+    background:linear-gradient(0deg, rgba(4,7,4,.94) 0%, rgba(4,7,4,.7) 55%, rgba(4,7,4,0) 100%);
+  }
+  .echip{
+    display:flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px;
+    border:1px solid var(--line); background:rgba(8,12,7,.85); transition:.2s;
+  }
+  .echip.flash{ animation:chipflash .8s ease;}
+  @keyframes chipflash{0%{background:#1c2a16; box-shadow:0 0 12px rgba(93,255,155,.6); transform:scale(1.12)}100%{background:rgba(8,12,7,.85)}}
+  .echip.charged{ border-color:var(--amber); box-shadow:0 0 10px rgba(255,193,77,.6);}
+  .echip .eem{ font-size:15px;}
+  .echip .eval{ font-family:var(--disp); font-weight:700; font-size:14px;}
+  .echip.w .eval{ color:var(--red);} .echip.a .eval{ color:var(--green-bright);} .echip.g .eval{ color:var(--orange);}
+
+  /* Log */
+  #log{ height:56px; overflow-y:auto; padding:5px 10px; font-size:11px; line-height:1.45; display:flex; flex-direction:column; gap:1px;}
+  #log .l{ opacity:0; animation:fadein .25s forwards;}
+  @keyframes fadein{to{opacity:1}}
+  #log .sys{ color:var(--txt-dim);} #log .good{ color:var(--green);} #log .warn{ color:var(--amber);} #log .bad{ color:var(--red);}
+  #log .l::before{ content:"› "; color:var(--green-dim);}
+  #log::-webkit-scrollbar{ width:6px;} #log::-webkit-scrollbar-thumb{ background:var(--green-deep); border-radius:4px;}
+
+  /* Controls */
+  .controls{ display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .dpad{ display:grid; grid-template-columns:repeat(3,42px); grid-template-rows:repeat(3,42px); gap:5px;}
+  .dpad button{ font-size:17px;}
+  .btn{
+    font-family:var(--disp); font-weight:600; letter-spacing:1px;
+    background:linear-gradient(180deg,#15200f,#0b1109); color:var(--green);
+    border:1px solid var(--green-deep); border-radius:6px; cursor:pointer;
+    box-shadow:inset 0 0 8px rgba(0,0,0,.5); transition:.08s; touch-action:manipulation;
+    display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent;
+  }
+  .btn:active{ transform:translateY(1px); background:#1c2a16;}
+  .dpad .empty{ visibility:hidden;}
+  
+  /* Additional Buttons */
+  .dpad .action-btn { background:linear-gradient(180deg,#2b1d0a,#1a0e05); color:var(--amber); border-color:var(--rust); font-size:17px;}
+  .dpad .action-btn:active { background:#3b250e; }
+  .dpad .sub-btn { background:linear-gradient(180deg,#1c2833,#0e151b); color:#5dade2; border-color:#2874a6; font-size:17px;}
+  .dpad .sub-btn:active { background:#212f3d; }
+  .dpad .wait-btn { font-size:15px; }
+  .dpad .repair-btn { background:linear-gradient(180deg,#0f2a1a,#08160e); color:var(--green-bright); border-color:var(--green-dim); font-size:17px;}
+  .dpad .repair-btn:active { background:#13321f; } 
+
+  .side-ctrl{ display:flex; flex-direction:column; gap:6px; align-items:flex-end; flex:1;}
+  .hint{ font-size:10px; color:var(--txt-dim); line-height:1.4; text-align:right;}
+  .hint b{ color:var(--green); font-weight:400;}
+  .toggle{ font-size:10px; color:var(--txt-dim); cursor:pointer; user-select:none; padding:5px 9px; border:1px solid var(--line); border-radius:5px;}
+  .toggle:active{ color:var(--green);}
+  .action-row{ display:flex; gap:5px;}
+  .action-row .btn{ width:42px; height:42px; flex-direction:column; gap:1px; font-size:17px; padding:0;}
+  .akey{ font-size:8px; color:var(--txt-dim); letter-spacing:0; font-family:var(--mono); line-height:1;}
+
+  /* Overlay modals */
+  .overlay{ position:fixed; inset:0; z-index:9500; display:flex; align-items:center; justify-content:center; padding:16px;
+    background:radial-gradient(ellipse at center, rgba(5,8,5,.86), rgba(2,3,2,.96)); backdrop-filter:blur(2px);}
+  .overlay.hidden{ display:none;}
+  .modal{
+    width:100%; max-width:420px; max-height:90dvh; overflow-y:auto;
+    background:linear-gradient(180deg,#0d140c,#080b07); border:1px solid var(--green-deep);
+    border-radius:9px; padding:22px 20px; box-shadow:0 0 40px rgba(93,255,155,.12), inset 0 0 40px rgba(0,0,0,.6);
+    text-align:center; position:relative;
+  }
+  .modal::before{content:"";position:absolute;inset:0;border-radius:9px;pointer-events:none;background:repeating-linear-gradient(to bottom,transparent 0 3px,rgba(0,0,0,.25) 3px 4px);}
+  .modal h1{ font-family:var(--disp); font-weight:700; font-size:26px; letter-spacing:3px; color:var(--green-bright); text-shadow:0 0 14px rgba(93,255,155,.5); margin-bottom:3px;}
+  .modal h1.x{ color:var(--orange); text-shadow:0 0 14px rgba(255,138,43,.5);}
+  .modal .tag{ font-family:var(--disp); letter-spacing:4px; font-size:10px; color:var(--txt-dim); margin-bottom:14px;}
+  .modal p{ font-size:12.5px; line-height:1.7; color:var(--txt); margin-bottom:12px; text-align:left;}
+  .modal .legend{ display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; font-size:11.5px; text-align:left; margin:0 auto 14px; max-width:340px;}
+  .modal .legend span{ color:var(--txt-dim);} .modal .legend b{ color:var(--green); font-weight:400;}
+  .modal .stat-final{ font-size:12px; color:var(--amber); margin-bottom:16px; font-family:var(--disp); letter-spacing:1px;}
+  .modal .start{ font-size:15px; padding:12px 28px; letter-spacing:2px; margin: 0 auto; display: inline-flex; } 
+  .blink-cur::after{ content:"_"; animation:blink 1s steps(2) infinite; color:var(--green);}
+  @keyframes blink{0%,80%{opacity:1}90%{opacity:.25}100%{opacity:1}}
+
+  /* floating damage numbers */
+  .dmg-float{
+    position:fixed; z-index:9100; pointer-events:none;
+    font-family:var(--disp); font-weight:700; letter-spacing:.5px;
+    transform:translate(-50%,0); text-shadow:0 0 8px currentColor;
+    animation:floatUp .75s ease-out forwards;
+  }
+  @keyframes floatUp{
+    0%  {opacity:1; transform:translate(-50%, 0)}
+    25% {opacity:1; transform:translate(-50%,-12px)}
+    100%{opacity:0; transform:translate(-50%,-38px)}
+  }
+
+  /* ===== TRAP TILE STYLES ===== */
+  /* EMP Mine */
+  .cell.trap-emp {
+    background: #0d0d1a;
+    box-shadow: inset 0 0 10px rgba(80,120,255,.5);
+  }
+  .cell.trap-emp::after {
+    content: "";
+    position: absolute; inset: 3px;
+    border: 1px solid rgba(100,140,255,.4);
+    border-radius: 2px;
+    animation: empPulse 2s ease-in-out infinite;
+  }
+  @keyframes empPulse {
+    0%,100%{ box-shadow:0 0 4px rgba(100,140,255,.3); opacity:.6; }
+    50%    { box-shadow:0 0 10px rgba(100,140,255,.8); opacity:1; }
+  }
+  /* EMP blast animation */
+  .cell.trap-emp-blast {
+    animation: empBlast .45s ease-out forwards;
+  }
+  @keyframes empBlast {
+    0%  { background:#1a1a4a; box-shadow: inset 0 0 30px rgba(100,140,255,1); }
+    50% { background:#2a2a6a; filter:brightness(3) saturate(2); }
+    100%{ background:#0a0d09; box-shadow:none; filter:none; }
+  }
+
+  /* Conveyor Belt */
+  .cell.trap-conv-n { background:#0a100a; box-shadow: inset 0 0 8px rgba(93,255,155,.25); }
+  .cell.trap-conv-s { background:#0a100a; box-shadow: inset 0 0 8px rgba(93,255,155,.25); }
+  .cell.trap-conv-e { background:#0a100a; box-shadow: inset 0 0 8px rgba(93,255,155,.25); }
+  .cell.trap-conv-w { background:#0a100a; box-shadow: inset 0 0 8px rgba(93,255,155,.25); }
+  .cell[class*="trap-conv"]::after {
+    content: "";
+    position: absolute; inset: 0;
+    animation: convFlow .7s linear infinite;
+  }
+  .cell.trap-conv-n::after { background: repeating-linear-gradient(180deg, transparent 0px, transparent 4px, rgba(93,255,155,.22) 4px, rgba(93,255,155,.22) 6px); animation-name: convFlowN; }
+  .cell.trap-conv-s::after { background: repeating-linear-gradient(0deg,  transparent 0px, transparent 4px, rgba(93,255,155,.22) 4px, rgba(93,255,155,.22) 6px); animation-name: convFlowS; }
+  .cell.trap-conv-e::after { background: repeating-linear-gradient(270deg,transparent 0px, transparent 4px, rgba(93,255,155,.22) 4px, rgba(93,255,155,.22) 6px); animation-name: convFlowE; }
+  .cell.trap-conv-w::after { background: repeating-linear-gradient(90deg, transparent 0px, transparent 4px, rgba(93,255,155,.22) 4px, rgba(93,255,155,.22) 6px); animation-name: convFlowW; }
+  @keyframes convFlowN { from{background-position:0 0}   to{background-position:0 -10px} }
+  @keyframes convFlowS { from{background-position:0 0}   to{background-position:0  10px} }
+  @keyframes convFlowE { from{background-position:0 0}   to{background-position: 10px 0} }
+  @keyframes convFlowW { from{background-position:0 0}   to{background-position:-10px 0} }
+
+  /* Cooling Gas */
+  .cell.trap-gas {
+    background: #080f10;
+    box-shadow: inset 0 0 12px rgba(0,200,220,.35);
+  }
+  .cell.trap-gas::after {
+    content:"";
+    position:absolute; inset:0;
+    background: radial-gradient(circle at 50% 50%, rgba(0,220,240,.12) 0%, transparent 80%);
+    animation: gasDrift 3s ease-in-out infinite alternate;
+  }
+  @keyframes gasDrift {
+    0%  { opacity:.4; transform:scale(1); }
+    100%{ opacity:1;  transform:scale(1.15); }
+  }
+
+  /* FOV vignette overlay for gas debuff */
+  #gasVignette {
+    position: fixed; inset:0; z-index:8900; pointer-events:none;
+    background: radial-gradient(ellipse at 50% 50%, transparent 8%, rgba(0,0,0,.97) 35%);
+    opacity: 0; transition: opacity .4s ease;
+  }
+  #gasVignette.active { opacity: 1; }
+
+  /* Status bar trap indicators */
+  .trap-status {
+    display: flex; gap: 4px; align-items: center;
+    font-size: 9px; font-family: var(--disp); color: var(--txt-dim);
+    padding: 0 2px;
+  }
+  .trap-badge {
+    padding: 1px 5px; border-radius: 3px; letter-spacing: .5px;
+    font-size: 9px; border: 1px solid;
+    animation: badgePulse 1.2s ease-in-out infinite;
+  }
+  .trap-badge.emp  { color:#7090ff; border-color:rgba(100,140,255,.4); background:rgba(30,40,80,.6); }
+  .trap-badge.gas  { color:#00d4e0; border-color:rgba(0,200,220,.4);   background:rgba(0,30,35,.6); }
+  @keyframes badgePulse { 0%,100%{opacity:.7} 50%{opacity:1} }
+
+  /* ===== WEAPON MALWARE LOCK ===== */
+  .echip.w.malware {
+    border-color: var(--red) !important;
+    box-shadow: 0 0 12px rgba(255,70,70,.5) !important;
+    animation: malwarePulse 0.8s ease-in-out infinite !important;
+  }
+  .echip.w.malware .eval::after { content: " [!]"; color: var(--red); font-size: 10px; }
+  .echip.w.malware .eem::before { content: "🔴"; font-size: 9px; vertical-align: middle; margin-right: 2px; }
+  @keyframes malwarePulse {
+    0%,100%{ border-color: var(--red); box-shadow: 0 0 6px rgba(255,70,70,.4); }
+    50%    { border-color: #ff8888;    box-shadow: 0 0 18px rgba(255,70,70,.8); }
+  }
+
+  /* Memory chip and antivirus cells */
+  .cell.chip {
+    background: #0a0a18;
+    box-shadow: inset 0 0 10px rgba(120,100,255,.5);
+  }
+  .cell.antivirus {
+    background: #0a180a;
+    box-shadow: inset 0 0 10px rgba(93,255,155,.4);
+  }
+  /* Key artifact (the core) */
+  .cell.artifact {
+    background: #1a1405;
+    box-shadow: inset 0 0 14px rgba(255,193,77,.7);
+    animation: artifactPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes artifactPulse {
+    0%,100%{ box-shadow: inset 0 0 10px rgba(255,193,77,.5); }
+    50%    { box-shadow: inset 0 0 24px rgba(255,193,77,1); }
+  }
+  /* Return-phase hunter */
+  .cell.hunter-enemy {
+    background: #1a0505;
+    box-shadow: inset 0 0 12px rgba(255,40,40,.7);
+    animation: hunterPulse 0.9s ease-in-out infinite;
+  }
+  @keyframes hunterPulse {
+    0%,100%{ box-shadow: inset 0 0 8px rgba(255,40,40,.5); }
+    50%    { box-shadow: inset 0 0 20px rgba(255,40,40,1); }
+  }
+
+  /* Stat mini-display in HUD */
+  .stat-chips {
+    display: flex; gap: 5px; align-items: center;
+    font-size: 9px; font-family: var(--disp); letter-spacing:.5px;
+    padding: 0 2px;
+  }
+  .stat-pip {
+    padding: 1px 5px; border-radius: 3px;
+    border: 1px solid; font-size: 9px;
+  }
+  .stat-pip.atk { color:var(--amber); border-color:rgba(255,193,77,.4); background:rgba(30,20,0,.6); }
+  .stat-pip.def { color:var(--green); border-color:rgba(93,255,155,.3); background:rgba(0,20,10,.6); }
+
+  /* ===== TERMINAL CELL ===== */
+  .cell.terminal {
+    background: #0a0f1a;
+    box-shadow: inset 0 0 12px rgba(60,140,255,.5);
+    animation: termPulse 2.5s ease-in-out infinite;
+  }
+  .cell.terminal-used { background: #0a0a0a; box-shadow: none; filter: brightness(.4); }
+  @keyframes termPulse {
+    0%,100%{ box-shadow: inset 0 0 8px rgba(60,140,255,.3); }
+    50%    { box-shadow: inset 0 0 20px rgba(60,140,255,.7); }
+  }
+
+  /* ===== TERMINAL CHOICE PANEL ===== */
+  #termPanel {
+    position: fixed; inset: 0; z-index: 9600;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+    background: rgba(2,4,2,.88); backdrop-filter: blur(3px);
+  }
+  #termPanel.hidden { display: none; }
+  #termPanel .tbox {
+    width: 100%; max-width: 360px;
+    background: linear-gradient(180deg,#080f18,#040a10);
+    border: 1px solid #1a3a6a; border-radius: 8px; padding: 18px 16px;
+    box-shadow: 0 0 40px rgba(60,140,255,.2), inset 0 0 30px rgba(0,0,0,.7);
+    font-family: var(--mono);
+  }
+  #termPanel .tbox h2 {
+    font-family: var(--disp); font-size: 14px; letter-spacing: 3px;
+    color: #5daaff; margin-bottom: 4px;
+    text-shadow: 0 0 10px rgba(60,140,255,.6);
+  }
+  #termPanel .tbox p { font-size: 10px; color: var(--txt-dim); margin-bottom: 14px; }
+  #termPanel .tchoices { display: flex; flex-direction: column; gap: 7px; }
+  #termPanel .tchoice {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    background: rgba(10,20,40,.8); border: 1px solid #1a3a6a; border-radius: 5px;
+    cursor: pointer; transition: .12s; font-size: 11.5px; color: var(--txt);
+  }
+  #termPanel .tchoice:hover { background: rgba(20,50,100,.8); border-color: #5daaff; }
+  #termPanel .tchoice .ticon { font-size: 18px; flex-shrink: 0; }
+  #termPanel .tchoice .tdesc { line-height: 1.4; }
+  #termPanel .tchoice .tdesc b { color: #5daaff; display: block; margin-bottom: 2px; font-family: var(--disp); letter-spacing: 1px; }
+  #termPanel .tcancel {
+    margin-top: 10px; width: 100%; padding: 6px; font-size: 10px;
+    font-family: var(--disp); letter-spacing: 2px; color: var(--txt-dim);
+    background: transparent; border: 1px dashed var(--line); border-radius: 4px; cursor: pointer;
+  }
+  #termPanel .tcancel:hover { color: var(--txt); border-color: var(--txt-dim); }
+
+  /* ===== JAMMER GLITCH ===== */
+  .cell.jammer-enemy { background: #1a0a1a; box-shadow: inset 0 0 9px rgba(200,50,255,.4); }
+  /* When jammer is alive, HUD numbers glitch */
+  .jammer-active .hnum,
+  .jammer-active .hud-atk span { animation: glitchNum .3s steps(1) infinite; }
+  @keyframes glitchNum {
+    0%  { opacity:1; }
+    20% { opacity:0; }
+    21% { content:"???"; opacity:1; }
+    60% { opacity:1; }
+    80% { opacity:.3; }
+    100%{ opacity:1; }
+  }
+  /* Extra: overlay scan-glitch on the HUD bars */
+  .jammer-active .hud::after {
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background: repeating-linear-gradient(0deg,rgba(200,50,255,.06) 0 2px,transparent 2px 4px);
+    animation: scanGlitch .15s linear infinite;
+  }
+  @keyframes scanGlitch { from{background-position:0 0} to{background-position:0 4px} }
+
+  /* ===== SCAVENGER ENEMY ===== */
+  .cell.scavenger-enemy { background: #121208; box-shadow: inset 0 0 9px rgba(180,160,40,.3); }
+
+  /* ===== OVERCLOCK BUTTON ===== */
+  #ocBtn {
+    font-family: var(--disp); font-weight: 700; font-size: 10px; letter-spacing: 1.5px;
+    padding: 6px 10px; border-radius: 5px; cursor: pointer; transition: .1s;
+    display: flex; align-items: center; gap: 4px;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  #ocBtn.ready {
+    background: linear-gradient(180deg,#2a1a00,#160d00);
+    color: var(--amber); border: 1px solid var(--rust);
+    box-shadow: 0 0 8px rgba(255,138,43,.3);
+  }
+  #ocBtn.active {
+    background: linear-gradient(180deg,#3a2200,#200f00);
+    color: #fff; border: 1px solid var(--amber);
+    box-shadow: 0 0 16px rgba(255,193,77,.6);
+    animation: ocPulse .6s ease-in-out infinite;
+  }
+  #ocBtn.cooldown {
+    background: linear-gradient(180deg,#2a0505,#160000);
+    color: var(--red); border: 1px solid #5a1010;
+    box-shadow: 0 0 8px rgba(255,70,70,.2);
+  }
+  #ocBtn:disabled { opacity: .45; cursor: not-allowed; }
+  @keyframes ocPulse { 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.5)} }
+
+  /* Overclock screen flash (orange) */
+  @keyframes ocFlash {
+    0%  { box-shadow: inset 0 0 0 rgba(255,138,43,0); }
+    40% { box-shadow: inset 0 0 100px rgba(255,138,43,.5); }
+    100%{ box-shadow: inset 0 0 0 rgba(255,138,43,0); }
+  }
+
+  /* Status bar - overclock indicators */
+  .trap-badge.oc-active  { color: var(--amber); border-color: rgba(255,193,77,.5); background: rgba(40,20,0,.7); }
+  .trap-badge.oc-cool    { color: var(--red);   border-color: rgba(255,70,70,.4);  background: rgba(30,0,0,.7); }
+
+  /* ===== STAIRS: prompt glow ===== */
+  .cell.stairs-ready {
+    background: #0d180b !important;
+    box-shadow: inset 0 0 14px rgba(93,255,155,.7) !important;
+    animation: stairsGlow 1s ease-in-out infinite !important;
+  }
+  @keyframes stairsGlow {
+    0%,100%{ box-shadow: inset 0 0 10px rgba(93,255,155,.5); }
+    50%    { box-shadow: inset 0 0 22px rgba(93,255,155,.9); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">CHROME<span class="x">/</span>DELVER</div>
+    <div class="subtitle">クローム・デルヴァー　v2.0</div>
+  </header>
+
+  <!-- MAP + OVERLAID HUD -->
+  <div class="frame" id="stageFrame">
+    <div class="hud">
+      <div class="hud-depth">B<span id="depth">1</span></div>
+      <div class="hud-bars">
+        <div class="hbar"><span class="hlab">HP</span><div class="track"><div class="fill hp" id="hpFill"></div></div><span class="hnum" id="hpNum">24/24</span></div>
+        <div class="hbar"><span class="hlab">PW</span><div class="track"><div class="fill pw" id="pwFill"></div></div><span class="hnum" id="pwNum">24/24</span></div>
+      </div>
+      <div class="hud-atk"><span class="a">⚔</span><span id="atkVal">3</span></div>
+    </div>
+    <div id="trapStatus" class="trap-status" style="position:absolute;top:auto;bottom:6px;left:8px;z-index:6;pointer-events:none;"></div>
+    <div id="statChips" class="stat-chips" style="position:absolute;top:auto;bottom:6px;right:8px;z-index:6;pointer-events:none;"></div>
+
+    <div id="map"></div>
+    <!-- Gas vignette overlay -->
+    <div id="gasVignette"></div>
+
+    <div class="equip">
+      <div class="echip w" id="slotW"><span class="eem">🔩</span><span class="eval">3</span></div>
+      <div class="echip a" id="slotA"><span class="eem">🛡️</span><span class="eval">24</span></div>
+      <div class="echip g" id="slotG"><span class="eem">🔌</span><span class="eval">18</span></div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="frame" id="logFrame"><div id="log"></div></div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="dpad">
+      <div class="empty"></div>
+      <button class="btn" data-dir="up">▲</button>
+      <div class="empty"></div>
+      
+      <button class="btn" data-dir="left">◀</button>
+      <button class="btn wait-btn" data-dir="wait" title="待機(Space)">⏳</button>
+      <button class="btn" data-dir="right">▶</button>
+      
+      <div class="empty"></div>
+      <button class="btn" data-dir="down">▼</button>
+      <div class="empty"></div>
+    </div>
+    <div class="side-ctrl">
+      <div class="action-row">
+        <button class="btn sub-btn" data-dir="pickup" title="調べる/拾う/階段/端末 (E または F)">✋<span class="akey">E/F</span></button>
+        <button class="btn action-btn" data-dir="scrap" title="分解(Q)">🔨<span class="akey">Q</span></button>
+        <button class="btn repair-btn" data-dir="repair" title="修復(R)">🔧<span class="akey">R</span></button>
+      </div>
+      <button id="ocBtn" class="ready" title="オーバークロック(C)">⚡OC<span style="font-size:8px;opacity:.7"> C</span></button>
+      <div class="toggle" id="muteBtn">🔊 SOUND: ON</div>
+      <div class="hint">
+        <b>WASD/矢印</b> 移動・攻撃<br>
+        <b>E/F</b>調べる <b>Q</b>分解 <b>R</b>修復<br>
+        <b>C</b>OC <b>Sp</b>待機 <b>Esc</b>閉じる
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TERMINAL PANEL -->
+<div id="termPanel" class="hidden">
+  <div class="tbox">
+    <h2>🖥️ LEGACY TERMINAL</h2>
+    <p>旧世代ネットワーク端末を検出。アクセスを選択してください。</p>
+    <div class="tchoices">
+      <div class="tchoice" id="termScan">
+        <span class="ticon">📡</span>
+        <div class="tdesc"><b>フロア・スキャン</b>このフロア全域を完全マッピング（階段・アイテム・トラップ可視化）</div>
+      </div>
+      <div class="tchoice" id="termPower">
+        <span class="ticon">⚡</span>
+        <div class="tdesc"><b>電力抽出</b>電力を +15 回復する</div>
+      </div>
+      <div class="tchoice" id="termSalvage">
+        <span class="ticon">📦</span>
+        <div class="tdesc"><b>パーツ・サルベージ</b>ランダムな装備パーツを1つドロップ</div>
+      </div>
+    </div>
+    <button class="tcancel" id="termCancel">[ キャンセル ]</button>
+  </div>
+</div>
+
+<!-- INTRO -->
+<div class="overlay" id="intro">
+  <div class="modal">
+    <h1>CHROME<span style="color:var(--orange)">/</span>DELVER</h1>
+    <div class="tag">クローム・デルヴァー</div>
+    <p>錆びついた鉄屑の山と化した廃墟に潜む自律機械<span class="blink-cur"></span><br><br>
+    敵機を破壊して<b>パーツ</b>を奪い、自分を組み替えながら最深部 <b>B10</b> へ。そこに眠る<b>コア💠</b>を回収し、<b>B1まで生還</b>せよ。レベルは無い。<b>装備が、お前のすべてだ。</b></p>
+    <div class="legend">
+      <div><b>🤖</b> <span>あなた（コア）</span></div>
+      <div><b>👾</b> <span>警備ドローン</span></div>
+      <div><b>🕷️</b> <span>多脚戦車</span></div>
+      <div><b>🔩🛡️🔌</b> <span>各種パーツ</span></div>
+      <div><b>🔋</b> <span>バッテリー</span></div>
+      <div><b>🪜</b> <span>下層への階段</span></div>
+      <div><b>💥</b> <span>EMP地雷</span></div>
+      <div><b>➡️</b> <span>ベルトコンベア</span></div>
+      <div><b>💨</b> <span>冷却ガス漏れ</span></div>
+      <div><b>💾</b> <span>未解析メモリーチップ</span></div>
+      <div><b>💿</b> <span>アンチウイルス・ディスク</span></div>
+      <div><b>🖥️</b> <span>旧世代ターミナル</span></div>
+      <div><b>📡</b> <span>ジャマー（電波妨害機）</span></div>
+      <div><b>🗑️</b> <span>スカベンジャー（資源回収機）</span></div>
+      <div><b>💠</b> <span>コア（B10の回収目標）</span></div>
+      <div><b>👁️</b> <span>追跡者（帰還時に出現）</span></div>
+    </div>
+    <p style="color:var(--amber);font-size:11.5px;border-top:1px dashed var(--line);padding-top:11px;">
+      ⚠ 5歩ごとに電力-1。電力が尽きると歩くたびコアHPが削れる。<br>
+      <b>E / F / ✋</b> 調べる：拾う／使用／階段の昇降／ターミナル操作。<br>
+      <b>R / 🔧</b> 修復：電力10消費しHP5回復。<b>Q / 🔨</b> 分解（1ターン）。<br>
+      <b>Space / ⏳</b> 待機。<b>C / ⚡OC</b> オーバークロック（PW5消費・3T強化→3T反動）。<b>Esc</b> UIを閉じる。<br>
+      <b>💠回収後</b>は階段が上昇用に切替。フロアは崩壊・再生成され<b>追跡者👁️</b>が追ってくる。B1の<b>脱出口🚪</b>まで生き延びろ。
+    </p>
+    <button class="btn start" id="startBtn">▶ DELVE START</button>
+  </div>
+</div>
+
+<!-- GAMEOVER -->
+<div class="overlay hidden" id="gameover">
+  <div class="modal">
+    <h1 class="x">SYSTEM DOWN</h1>
+    <div class="tag">コア機能停止</div>
+    <p id="goReason" style="text-align:center;color:var(--txt-dim);"></p>
+    <div class="stat-final" id="goStat"></div>
+    <button class="btn start" id="retryBtn">⟳ REBOOT &amp; RETRY</button>
+  </div>
+</div>
+
+<!-- VICTORY -->
+<div class="overlay hidden" id="victory">
+  <div class="modal">
+    <h1>ESCAPE COMPLETE</h1>
+    <div class="tag">コア回収・生還</div>
+    <p style="text-align:center;">崩壊する機械都市からコアを抱えて脱出した。<br>無数のスクラップの中で、お前だけが地上の光を取り戻した。</p>
+    <div class="stat-final" id="vicStat"></div>
+    <button class="btn start" id="vicBtn">⟳ NEW DELVE</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ===== CONFIG ===== */
+const MAP_W=36, MAP_H=24, VW=15, VH=13;
+const FOV=5, MAX_FLOOR=10, BATTERY_RESTORE=14, AGGRO=8;
+const WALL=0, FLOOR=1, STAIRS=2;
+const REST_POWER_COST=10, REST_HP_GAIN=5;
+const SCRAP_ARMOR_HP=8, SCRAP_BATTERY_PWR=15, SCRAP_WEAPON_ATK=6, SCRAP_GEN_PWR=10, SCRAP_WEAPON_HP=2, SCRAP_WEAPON_PW=2;
+
+/* ===== BASE STAT CONFIG ===== */
+// Memory chip & malware system
+const CHIP_INSTALL_CHANCE = 0.80;  // 80% success rate
+const CHIP_ATK_BONUS  = 1;         // base ATK gain per chip
+const CHIP_DEF_BONUS  = 1;         // base DEF gain per chip
+const BASE_ATK_MIN    = 0;         // floor for baseAtk
+const BASE_DEF_MIN    = 0;         // floor for baseDef
+// Malware weapon lock
+const WEAPON_MALWARE_CHANCE = 0.20; // 20% chance weapon is infected on pickup
+// Hit rate
+const HIT_MISS_CHANCE = 0.10;      // 10% miss for both player and enemy
+
+/* ===== NEW FEATURE CONFIG ===== */
+// Terminal
+const TERM_POWER_GAIN    = 15;     // power extracted from terminal
+const TERM_ALERT_CHANCE  = 0.30;   // 30% security alert after terminal use
+const TERM_SPAWN_COUNT   = [2, 3]; // min/max enemies spawned on alert
+// Overclock
+const OC_COST            = 5;      // PW cost to activate
+const OC_DURATION        = 3;      // turns of buff
+const OC_COOLDOWN        = 3;      // turns of debuff / overheat
+const OC_DMG_MULT        = 2.0;    // damage multiplier while active
+const OC_DEF_MULT        = 0.5;    // damage received multiplier while active
+const OC_COOL_DMG_MULT   = 0.5;    // damage mult during cooldown
+const OC_COOL_HP_DRAIN   = 1;      // HP lost per turn during cooldown
+// Initial power: now driven by starting generator capacity (漏電セル pwr:24)
+const INIT_POWER_OVERRIDE = 24; // kept for reference; power=maxPower() is used
+
+/* ===== TRAP CONFIG ===== */
+// Trap types stored in traps[] array: {x, y, type, ...extra}
+// type: 'emp' | 'conveyor' | 'gas'
+const TRAP_EMP_DMG_HP   = 4;   // HP damage to player from EMP
+const TRAP_EMP_DMG_PW   = 6;   // Power damage to player from EMP
+const TRAP_EMP_ENEMY_HP = 8;   // HP damage to enemies from EMP
+const TRAP_CONV_WALL_DMG = 2;  // Damage when conveyor pushes into wall
+const TRAP_GAS_DURATION = 4;   // Turns gas debuff lasts
+const TRAP_GAS_FOV_REDUCED = 1;// Player FOV reduced to this while gassed
+const TRAP_GAS_AGGRO_REDUCED = 2; // Enemy aggro range while in gas
+// Conveyor direction vectors
+const CONV_DIRS = { n:[0,-1], s:[0,1], e:[1,0], w:[-1,0] };
+
+/* ===== PARTS ===== */
+const PARTS={
+  weapon:[
+    {slot:'weapon',name:'錆びた鉄パイプ',em:'🔩',atk:4},
+    {slot:'weapon',name:'解体ドリル',em:'🪛',atk:6},
+    {slot:'weapon',name:'プラズマカッター',em:'⚡',atk:9},
+    {slot:'weapon',name:'重斬剣ギロチン',em:'🗡️',atk:13},
+    {slot:'weapon',name:'チェーンソー',em:'🪚',atk:16, effect:'power_drain'}, 
+    {slot:'weapon',name:'粒子加速砲',em:'🔫',atk:18},
+  ],
+  armor:[
+    {slot:'armor',name:'廃材プレート',em:'🛡️',hp:24}, 
+    {slot:'armor',name:'合金フレーム',em:'🛡️',hp:34},
+    {slot:'armor',name:'光学迷彩クローク',em:'🧥',hp:15, effect:'stealth'}, 
+    {slot:'armor',name:'反応装甲',em:'🛡️',hp:48},
+    {slot:'armor',name:'ナノラミネート',em:'🛡️',hp:64},
+    {slot:'armor',name:'重核シェル',em:'🛡️',hp:85},
+    {slot:'armor',name:'過積載アーマー',em:'🛡️',hp:120, effect:'heavy'}, 
+  ],
+  generator:[
+    {slot:'generator',name:'漏電セル',em:'🔌',pwr:24},
+    {slot:'generator',name:'標準ジェネレータ',em:'🔌',pwr:28},
+    {slot:'generator',name:'高効率炉',em:'🔌',pwr:42},
+    {slot:'generator',name:'核融合炉',em:'🔌',pwr:60},
+    {slot:'generator',name:'量子炉',em:'🔌',pwr:90},
+    {slot:'generator',name:'放射能炉',em:'☢️',pwr:100, effect:'radioactive'},
+  ],
+};
+
+/* ===== STATE ===== */
+let map, visible, explored, items, enemies;
+let px, py, hp, power, floor, equip, state;
+let cells=[], camX=0, camY=0, stepCount=0, attackBuff=0;
+// Trap state
+let traps = [];           // array of trap objects on the map
+let playerGasTurns = 0;   // turns remaining of gas debuff on player
+// Base stats (memory chip upgrades)
+let baseAtk = 0;          // cumulative ATK bonus from chips
+let baseDef = 0;          // cumulative DEF bonus from chips (reduces incoming damage)
+// Weapon lock (malware infection)
+let weaponLocked = false;  // true = current weapon is malware-locked
+
+// ===== RETURN / ARTIFACT SYSTEM =====
+// false = ダイブ中（階段で floor++）。コアを回収すると true になり、以降は
+// 階段が上昇（floor--）に切り替わる。B1 でさらに上昇しようとすると脱出＝Victory。
+let hasArtifact = false;
+
+// Terminals on the map: {x, y, used:bool}
+let terminals = [];
+// Overclock state
+let ocTurns    = 0;  // >0 = buff active, remaining turns
+let ocCooldown = 0;  // >0 = overheat debuff, remaining turns
+// Jammer presence flag (recalculated each render)
+let jammerAlive = false;
+// Active terminal being interacted (set before showing panel)
+let activeTerminal = null;
+
+const $=id=>document.getElementById(id);
+const mapEl=$('map'), logEl=$('log');
+
+/* ===== UTIL ===== */
+const ri=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const choice=a=>a[Math.floor(Math.random()*a.length)];
+function tierFor(d){ let t=Math.floor((d-1)/2)+ri(-1,1); return Math.max(0,Math.min(PARTS.weapon.length-1,t)); }
+function maxHP(){ return equip.armor.hp; }
+function maxPower(){ return equip.generator.pwr; }
+// Effective ATK — includes overclock multiplier
+function atkVal(){ 
+  let a = equip.weapon.atk + baseAtk; 
+  if(equip.weapon.effect === 'power_drain' && power <= 0) {
+    a = Math.max(1, 1 + baseAtk);
+  }
+  if(ocTurns > 0)    a = Math.floor(a * OC_DMG_MULT);
+  if(ocCooldown > 0) a = Math.max(1, Math.floor(a * OC_COOL_DMG_MULT));
+  return a;
+}
+// baseDef reduces incoming damage (minimum 0 reduction of each hit)
+// Overclock halves incoming damage
+function defVal(){
+  let d = baseDef;
+  // During OC, incoming damage is halved (applied multiplicatively in enemyAttack)
+  return d;
+}
+// OC incoming damage multiplier
+function ocIncomingMult(){ return (ocTurns > 0) ? OC_DEF_MULT : 1.0; }
+
+/* ===== MAP GEN ===== */
+function rectsOverlap(a,b){ return a.x<=b.x+b.w+1&&a.x+a.w+1>=b.x&&a.y<=b.y+b.h+1&&a.y+a.h+1>=b.y; }
+function carveRect(r){ for(let y=r.y;y<r.y+r.h;y++)for(let x=r.x;x<r.x+r.w;x++)if(x>0&&y>0&&x<MAP_W-1&&y<MAP_H-1)map[y][x]=FLOOR; }
+function carveH(x1,x2,y){ for(let x=Math.min(x1,x2);x<=Math.max(x1,x2);x++)if(map[y][x]===WALL)map[y][x]=FLOOR; }
+function carveV(y1,y2,x){ for(let y=Math.min(y1,y2);y<=Math.max(y1,y2);y++)if(map[y][x]===WALL)map[y][x]=FLOOR; }
+
+function generateFloor(d){
+  map=Array.from({length:MAP_H},()=>new Array(MAP_W).fill(WALL));
+  visible=Array.from({length:MAP_H},()=>new Array(MAP_W).fill(false));
+  explored=Array.from({length:MAP_H},()=>new Array(MAP_W).fill(false));
+  items=[]; enemies=[]; traps=[]; terminals=[]; playerGasTurns=0;
+  const rooms=[]; let tries=0;
+  while(rooms.length<10&&tries<120){
+    tries++;
+    const w=ri(4,7),h=ri(3,5),x=ri(1,MAP_W-w-2),y=ri(1,MAP_H-h-2);
+    const r={x,y,w,h,cx:x+(w>>1),cy:y+(h>>1)};
+    if(rooms.some(o=>rectsOverlap(o,r)))continue;
+    carveRect(r); rooms.push(r);
+  }
+  if(rooms.length===0){ const r={x:2,y:2,w:6,h:4,cx:5,cy:4}; carveRect(r); rooms.push(r); }
+  for(let i=1;i<rooms.length;i++){
+    const a=rooms[i-1],b=rooms[i];
+    if(Math.random()<0.5){ carveH(a.cx,b.cx,a.cy); carveV(a.cy,b.cy,b.cx); }
+    else { carveV(a.cy,b.cy,a.cx); carveH(a.cx,b.cx,b.cy); }
+  }
+  px=rooms[0].cx; py=rooms[0].cy;
+  const last=rooms[rooms.length-1]; let sx=last.cx,sy=last.cy;
+  if(sx===px&&sy===py){ outer: for(let y=MAP_H-1;y>=0;y--)for(let x=MAP_W-1;x>=0;x--)if(map[y][x]===FLOOR&&!(x===px&&y===py)){sx=x;sy=y;break outer;} }
+  map[sy][sx]=STAIRS;
+
+  const free=[];
+  for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++)if(map[y][x]===FLOOR&&!(x===px&&y===py))free.push({x,y});
+
+  // ===== KEY ARTIFACT (deepest floor only) =====
+  // スポーンから最も遠い床マスをコア用に予約し、free から取り除くことで
+  // 敵・アイテム・トラップがコアの上に重ならないようにする。
+  if(d===MAX_FLOOR){
+    let bestIdx=-1, bestD=-1;
+    for(let i=0;i<free.length;i++){
+      const dd=Math.abs(free[i].x-px)+Math.abs(free[i].y-py);
+      if(dd>bestD){ bestD=dd; bestIdx=i; }
+    }
+    if(bestIdx>=0){
+      const a=free.splice(bestIdx,1)[0];
+      items.push({x:a.x,y:a.y,type:'artifact'});
+    }
+  }
+
+  for(let i=free.length-1;i>0;i--){ const j=ri(0,i); [free[i],free[j]]=[free[j],free[i]]; }
+  let fi=0; const take=()=>free[fi++];
+
+  const ecount=Math.min(3+d,9);
+  for(let i=0;i<ecount&&fi<free.length;i++){
+    const t=take();
+    if(Math.abs(t.x-px)+Math.abs(t.y-py)<5){ i--; continue; }
+    enemies.push(makeEnemy(t.x,t.y,d));
+  }
+  for(let i=0;i<ri(2,3)&&fi<free.length;i++){ const t=take(); const slot=choice(['weapon','armor','generator']); items.push({x:t.x,y:t.y,type:'part',def:PARTS[slot][tierFor(d)]}); }
+  for(let i=0;i<ri(2,4)&&fi<free.length;i++){ const t=take(); items.push({x:t.x,y:t.y,type:'battery'}); }
+  // Memory chips: 1~2 per floor
+  for(let i=0;i<ri(1,2)&&fi<free.length;i++){ const t=take(); items.push({x:t.x,y:t.y,type:'chip'}); }
+  // Antivirus disks: 0~1 per floor (rarer)
+  for(let i=0;i<(Math.random()<0.55?1:0)&&fi<free.length;i++){ const t=take(); items.push({x:t.x,y:t.y,type:'antivirus'}); }
+  // Terminals: 1 per floor (deeper = more)
+  const termCount = Math.min(1 + Math.floor(d/3), 2);
+  for(let i=0;i<termCount&&fi<free.length;i++){
+    const t=take();
+    if(Math.abs(t.x-px)+Math.abs(t.y-py)<4){ fi--; continue; }
+    terminals.push({x:t.x,y:t.y,used:false});
+  }
+  // Special enemies: jammer (d>=2), scavenger (d>=3)
+  if(d>=2 && Math.random()<0.5 && fi<free.length){ const t=take(); enemies.push(makeSpecialEnemy('jammer',t.x,t.y,d)); }
+  if(d>=3 && Math.random()<0.6 && fi<free.length){ const t=take(); enemies.push(makeSpecialEnemy('scavenger',t.x,t.y,d)); }
+
+  // ===== RETURN-PHASE HUNTER =====
+  // コア回収後は、（再）生成される各フロアに「追跡者」を1体配置する。
+  // 通常の索敵範囲(AGGRO)を無視してプレイヤーを追い続ける＝崩壊そのものの化身。
+  // スポーン直後の即死を避けるため、できるだけ離れた床マスに配置する。
+  if(hasArtifact && fi<free.length){
+    for(let i=fi;i<free.length;i++){
+      if(Math.abs(free[i].x-px)+Math.abs(free[i].y-py)>=6){ [free[fi],free[i]]=[free[i],free[fi]]; break; }
+    }
+    const t=take();
+    enemies.push(makeHunter(t.x,t.y,d));
+  }
+
+  // ===== TRAP PLACEMENT =====
+  // Pass the remaining free list (unused tiles) and room data so traps avoid
+  // occupied tiles, and conveyors can be restricted to room interiors.
+  placeTrapsByFloor(d, free.slice(fi), rooms);
+}
+
+/* ===== ROOM / CORRIDOR CLASSIFICATION ===== */
+// True if (x,y) lies strictly inside any room rectangle.
+function isInsideRoom(x, y, rooms){
+  return rooms.some(r => x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h);
+}
+// A tile is a "doorway" if it is a room tile adjacent to a non-room floor tile
+// (i.e. the threshold where a corridor meets the room), OR a corridor tile
+// adjacent to a room tile. These are the spots we must NOT put conveyors on.
+function isDoorway(x, y, rooms){
+  const here = isInsideRoom(x, y, rooms);
+  const neigh = [[1,0],[-1,0],[0,1],[0,-1]];
+  for(const [dx,dy] of neigh){
+    const nx=x+dx, ny=y+dy;
+    if(nx<0||ny<0||nx>=MAP_W||ny>=MAP_H) continue;
+    if(map[ny][nx]!==FLOOR) continue;
+    const there = isInsideRoom(nx, ny, rooms);
+    if(here !== there) return true; // crosses a room boundary → doorway/threshold
+  }
+  return false;
+}
+
+/* ===== TRAP PLACEMENT ===== */
+// `pool` = array of {x,y} free tiles NOT used by enemies/items/terminals.
+// `rooms` = room rectangles for corridor/doorway classification.
+function placeTrapsByFloor(d, pool, rooms) {
+  // Scale trap count with depth (more traps deeper)
+  const empCount  = Math.min(1 + Math.floor(d / 2), 4);
+  const convCount = Math.min(2 + Math.floor(d / 2), 6);
+  const gasCount  = Math.min(1 + Math.floor(d / 3), 3);
+  const convDirKeys = Object.keys(CONV_DIRS);
+
+  // Shuffle the pool so traps are spread out.
+  for (let i = pool.length - 1; i > 0; i--) { const j = ri(0, i); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+
+  // Helper: is a tile already taken by something (so traps never hide under it)?
+  const occupied = (x, y) =>
+    (x === px && y === py) ||
+    map[y][x] === STAIRS ||
+    trapAt(x, y) ||
+    enemyAt(x, y) ||
+    items.some(it => it.x === x && it.y === y) ||
+    terminals.some(t => t.x === x && t.y === y);
+
+  // Generic placer: scans the pool for the first tile passing `valid`.
+  function place(trapObj, valid) {
+    for (let i = 0; i < pool.length; i++) {
+      const t = pool[i];
+      if (!t) continue;
+      if (occupied(t.x, t.y)) continue;
+      if (Math.abs(t.x - px) + Math.abs(t.y - py) < 4) continue; // away from start
+      if (valid && !valid(t.x, t.y)) continue;
+      traps.push({ ...trapObj, x: t.x, y: t.y, revealed: false });
+      pool[i] = null; // consume this tile
+      return true;
+    }
+    return false;
+  }
+
+  // EMP & gas: any eligible floor tile (corridors OK).
+  for (let i = 0; i < empCount; i++) place({ type: 'emp' }, null);
+  for (let i = 0; i < gasCount; i++) place({ type: 'gas' }, null);
+
+  // Conveyors: ONLY inside rooms, and NOT on doorways/thresholds.
+  // (Corridor tiles and room entrances are excluded by design.)
+  const convValid = (x, y) => isInsideRoom(x, y, rooms) && !isDoorway(x, y, rooms);
+  for (let i = 0; i < convCount; i++) {
+    place({ type: 'conveyor', dir: choice(convDirKeys) }, convValid);
+  }
+}
+
+function makeEnemy(x,y,d){
+  // 3階層以下はドローンのみ出現。多脚戦車は5階層目から。また多脚戦車のHP計算式を 5+d*3 に変更。
+  if(d <= 4 || Math.random()<0.62) {
+    return {x,y,name:'警備ドローン',em:'👾',kind:'drone',hp:7+d*2,maxhp:7+d*2,atk:2+Math.floor(d/2),speed:1,tick:0};
+  }
+  return {x,y,name:'多脚戦車',em:'🕷️',kind:'tank',hp:5+d*3,maxhp:5+d*3,atk:4+Math.floor(d*0.8),speed:2,tick:0};
+}
+
+function makeSpecialEnemy(kind, x, y, d){
+  if(kind === 'jammer'){
+    return {x,y,name:'ジャマー',em:'📡',kind:'jammer',
+            hp:4+d*2,maxhp:4+d*2,atk:1+Math.floor(d/3),speed:2,tick:0,
+            stomped:0,stunned:0,gasTurns:0};
+  }
+  if(kind === 'scavenger'){
+    return {x,y,name:'スカベンジャー',em:'🗑️',kind:'scavenger',
+            hp:6+d*2,maxhp:6+d*2,atk:0,speed:1,tick:0,
+            cargo:[],  // items consumed
+            stomped:0,stunned:0,gasTurns:0};
+  }
+}
+
+/* ===== RETURN-PHASE HUNTER ===== */
+function makeHunter(x,y,d){
+  // 高HP・無限索敵で「倒すより逃げる」を強制する追跡者。EMPによるスタンは有効。
+  return {x,y,name:'追跡者 HUNTER',em:'👁️',kind:'hunter',
+          hp:28+d*5, maxhp:28+d*5, atk:6+Math.floor(d*0.8), speed:1, tick:0,
+          stomped:0, stunned:0, gasTurns:0};
+}
+
+/* ===== FOV ===== */
+function hasLOS(x0,y0,x1,y1){
+  let dx=Math.abs(x1-x0),dy=Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1,err=dx-dy,x=x0,y=y0;
+  while(true){
+    if(x===x1&&y===y1)return true;
+    if(!(x===x0&&y===y0)&&map[y][x]===WALL)return false;
+    const e2=2*err; if(e2>-dy){err-=dy;x+=sx;} if(e2<dx){err+=dx;y+=sy;}
+  }
+}
+function computeFOV(){
+  // Gas debuff: player vision drastically reduced
+  const effectiveFOV = (playerGasTurns > 0) ? TRAP_GAS_FOV_REDUCED : FOV;
+  for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++)visible[y][x]=false;
+  for(let y=0;y<MAP_H;y++)for(let x=0;x<MAP_W;x++){
+    const ddx=x-px,ddy=y-py;
+    if(ddx*ddx+ddy*ddy<=effectiveFOV*effectiveFOV&&hasLOS(px,py,x,y)){visible[y][x]=true;explored[y][x]=true;}
+  }
+  visible[py][px]=true; explored[py][px]=true;
+}
+
+/* ===== LOOKUP ===== */
+function enemyAt(x,y){ return enemies.find(e=>e.x===x&&e.y===y); }
+function canEnemyMove(x,y){ if(x<0||y<0||x>=MAP_W||y>=MAP_H)return false; if(map[y][x]===WALL)return false; if(x===px&&y===py)return false; if(enemyAt(x,y))return false; return true; }
+
+/* ===== TRAP LOOKUP ===== */
+function trapAt(x, y)     { return traps.find(t => t.x === x && t.y === y); }
+function removeTrap(trap) { traps = traps.filter(t => t !== trap); }
+
+/* ===== TRAP SYSTEM ===== */
+
+/**
+ * Trigger a trap for a given entity.
+ * entity: { x, y, isPlayer, ref }  — ref is the enemy object (or null for player)
+ */
+function triggerTrap(trap, entity) {
+  if (!trap) return;
+
+  if (trap.type === 'emp') {
+    triggerEMP(trap, entity);
+  } else if (trap.type === 'gas') {
+    triggerGas(trap, entity);
+  }
+  // Conveyor is handled separately in processConveyors()
+}
+
+/* --- EMP Mine --- */
+function triggerEMP(trap, entity) {
+  removeTrap(trap);
+
+  // Visual: blast animation on the cell
+  flashCell(trap.x, trap.y, false);
+  // Extra EMP flash (blue)
+  const {cx,cy}=_cam(); const r=trap.y-cy, c=trap.x-cx;
+  if(r>=0&&r<VH&&c>=0&&c<VW){
+    cells[r][c].classList.add('trap-emp-blast');
+    setTimeout(()=>cells[r][c].classList.remove('trap-emp-blast'),500);
+  }
+  sfx('overload');
+
+  if (entity.isPlayer) {
+    // Player: PW damage then HP damage
+    const pwDmg = Math.min(power, TRAP_EMP_DMG_PW);
+    power -= pwDmg;
+    const hpDmg = TRAP_EMP_DMG_HP;
+    hp -= hpDmg;
+    floatDamage(px, py, hpDmg + pwDmg, 'var(--amber)', true);
+    flashScreen();
+    log(`💥 EMP地雷を踏んだ！ コアに ${hpDmg} ダメージ、電力 -${pwDmg}`,'bad');
+    if (hp <= 0) { doGameOver('EMP地雷によりコアが完全破壊された'); }
+  } else {
+    // Enemy: HP damage + stunned flag (skip 1 action)
+    const e = entity.ref;
+    const dmg = TRAP_EMP_ENEMY_HP;
+    e.hp -= dmg;
+    e.stunned = (e.stunned || 0) + 2; // stun for 2 full ticks
+    floatDamage(e.x, e.y, dmg, 'var(--amber)', true);
+    log(`💥 ${e.name} がEMP地雷を踏んだ！ ${dmg} ダメージ＋行動不能`,'good');
+    if (e.hp <= 0) killEnemy(e);
+  }
+}
+
+/* --- Cooling Gas --- */
+function triggerGas(trap, entity) {
+  trap.revealed = true; // becomes visible once stepped on
+  // Gas persists (not removed), just applies debuff
+  if (entity.isPlayer) {
+    const wasGassed = playerGasTurns > 0;
+    playerGasTurns = TRAP_GAS_DURATION;
+    if (!wasGassed) {
+      log('💨 冷却ガスに侵入…視界が急激に狭まった','warn');
+      floatText(px, py, '💨 視界低下', 'var(--green)', false);
+    }
+    // FOV override applied in computeFOV()
+  } else {
+    const e = entity.ref;
+    e.gasTurns = TRAP_GAS_DURATION;
+    // enemy aggro reduction applied in enemiesAct()
+  }
+}
+
+/**
+ * Check if an entity has stepped on any trap and trigger it.
+ * Called after every movement for both player and enemies.
+ */
+function checkTrapAt(x, y, entity) {
+  const trap = trapAt(x, y);
+  if (!trap) return;
+  if (trap.type === 'emp' || trap.type === 'gas') {
+    triggerTrap(trap, entity);
+  }
+  // conveyor triggers are processed in bulk after all moves
+}
+
+/* --- Conveyor Belts --- */
+/**
+ * Process conveyor belt forced movement for ALL entities (player + enemies).
+ * Called once per turn, AFTER all voluntary moves.
+ * Returns early if game state changes (player death).
+ */
+function processConveyors() {
+  // --- Player ---
+  {
+    let conv = trapAt(px, py);
+    if (conv && conv.type === 'conveyor') {
+      conv.revealed = true;
+      let dir = conv.dir;
+      let steps = 0;
+      const maxSteps = MAP_W + MAP_H; // hard cap against pathological loops
+      let moved = false;
+      const dirLabel = {n:'北',s:'南',e:'東',w:'西'};
+      while (steps++ < maxSteps) {
+        const [dx, dy] = CONV_DIRS[dir];
+        const nx = px + dx, ny = py + dy;
+        // Blocked by wall / map edge → stop (impact damage)
+        if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H || map[ny][nx] === WALL) {
+          hp -= TRAP_CONV_WALL_DMG;
+          floatDamage(px, py, TRAP_CONV_WALL_DMG, 'var(--red)', false);
+          shakePlayer();
+          log(`⚙ コンベアで${dirLabel[dir]}へ流され、壁に激突！ ${TRAP_CONV_WALL_DMG} ダメージ`,'bad');
+          sfx('damage'); flashScreen();
+          if (hp <= 0) { doGameOver('コンベアに押しつぶされた'); return; }
+          break;
+        }
+        // Blocked by an enemy → stop (mutual impact)
+        if (enemyAt(nx, ny)) {
+          const e = enemyAt(nx, ny);
+          hp -= TRAP_CONV_WALL_DMG;
+          e.hp -= TRAP_CONV_WALL_DMG;
+          shakePlayer();
+          floatDamage(px, py, TRAP_CONV_WALL_DMG, 'var(--red)', false);
+          log(`⚙ コンベアで ${e.name} に激突！ 互いに ${TRAP_CONV_WALL_DMG} ダメージ`,'bad');
+          sfx('damage');
+          if (e.hp <= 0) killEnemy(e);
+          if (hp <= 0) { doGameOver('コンベア衝突でコアが破壊された'); return; }
+          break;
+        }
+        // Free tile → slide one step
+        px = nx; py = ny; moved = true;
+        // Check trap at the tile we slid onto (EMP/gas can fire mid-slide)
+        checkTrapAt(px, py, { isPlayer: true, ref: null });
+        if (state !== 'play') return;
+        // Landed on stairs → stop sliding (player can then choose to descend)
+        if (map[py][px] === STAIRS) { log('🪜 コンベアで階段まで流された','sys'); break; }
+        // If we slid onto a DIFFERENT conveyor, adopt its direction; otherwise
+        // keep sliding straight in the same direction until a wall stops us.
+        const here = trapAt(px, py);
+        if (here && here.type === 'conveyor') { here.revealed = true; dir = here.dir; }
+        continue; // keep sliding until blocked by wall / enemy / edge
+      }
+      if (moved) sfx('conveyor');
+    }
+  }
+
+  // --- Enemies ---
+  for (const e of enemies.slice()) {
+    if (state !== 'play') break;
+    let conv = trapAt(e.x, e.y);
+    if (!conv || conv.type !== 'conveyor') continue;
+    conv.revealed = true;
+    let dir = conv.dir;
+    let steps = 0;
+    const maxSteps = MAP_W + MAP_H;
+    while (steps++ < maxSteps) {
+      const [dx, dy] = CONV_DIRS[dir];
+      const nx = e.x + dx, ny = e.y + dy;
+      // Wall / edge → impact damage, stop
+      if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H || map[ny][nx] === WALL) {
+        e.hp -= TRAP_CONV_WALL_DMG;
+        floatDamage(e.x, e.y, TRAP_CONV_WALL_DMG, 'var(--orange)', false);
+        if (e.hp <= 0) { killEnemy(e); }
+        break;
+      }
+      // Pushed into the player → attack, stop
+      if (nx === px && ny === py) {
+        e.hp -= TRAP_CONV_WALL_DMG;
+        hp   -= e.atk;
+        floatDamage(px, py, e.atk, 'var(--red)', false);
+        shakePlayer();
+        log(`⚙ コンベアで ${e.name} がぶつかってきた！ ${e.atk} ダメージ`,'bad');
+        sfx('damage'); flashScreen();
+        if (e.hp <= 0) killEnemy(e);
+        if (hp <= 0) { doGameOver(`コンベアで押し込まれた ${e.name} に撃破された`); return; }
+        break;
+      }
+      // Another enemy in the way → stop
+      if (enemyAt(nx, ny)) break;
+      // Free tile → slide
+      e.x = nx; e.y = ny;
+      checkTrapAt(e.x, e.y, { isPlayer: false, ref: e });
+      if (state !== 'play') return;
+      const here = trapAt(e.x, e.y);
+      if (here && here.type === 'conveyor') { here.revealed = true; dir = here.dir; }
+      continue; // keep sliding straight until blocked
+    }
+  }
+}
+
+/* ===== OVERCLOCK ===== */
+function activateOverclock(){
+  if(state!=='play') return;
+  if(ocTurns > 0){ log('⚡ オーバークロック中です','warn'); return; }
+  if(ocCooldown > 0){ log(`⚡ オーバーヒート冷却中… あと ${ocCooldown}T`,'warn'); return; }
+  if(power < OC_COST){ log(`⚡ 電力不足（必要: ${OC_COST}、現在: ${power}）`,'bad'); return; }
+  power -= OC_COST;
+  ocTurns = OC_DURATION;
+  document.body.animate([
+    {boxShadow:'inset 0 0 0 rgba(255,138,43,0)'},
+    {boxShadow:'inset 0 0 100px rgba(255,138,43,.5)'},
+    {boxShadow:'inset 0 0 0 rgba(255,138,43,0)'}
+  ],{duration:400});
+  floatText(px,py,'⚡OC!','var(--amber)',true);
+  log(`⚡ オーバークロック発動！ ${OC_DURATION}T間 ATK×2 / 被ダメ½ （PW -${OC_COST}）`,'good');
+  sfx('charge');
+  render();
+}
+
+/**
+ * Tick down gas/stun debuffs at the end of each full turn.
+ */
+function tickDebuffs() {
+  // Player gas
+  if (playerGasTurns > 0) {
+    playerGasTurns--;
+    if (playerGasTurns === 0) {
+      log('💨 冷却ガスから抜け出した。視界が戻った','sys');
+    }
+  }
+  // Overclock
+  if(ocTurns > 0){
+    ocTurns--;
+    if(ocTurns === 0){
+      ocCooldown = OC_COOLDOWN;
+      log(`⚡ OC終了 — オーバーヒート！ ${OC_COOLDOWN}T間 ATK½ / 毎T HPダメージ`,'bad');
+      sfx('overload');
+    } else {
+      log(`⚡ OC残り ${ocTurns}T`,'warn');
+    }
+  } else if(ocCooldown > 0){
+    // Overheat HP drain
+    hp -= OC_COOL_HP_DRAIN;
+    floatDamage(px,py,OC_COOL_HP_DRAIN,'var(--red)',false);
+    ocCooldown--;
+    if(ocCooldown === 0){
+      log('⚡ オーバーヒート回復。システム正常化','good');
+    } else {
+      log(`⚡ オーバーヒート中 -${OC_COOL_HP_DRAIN}HP（残り ${ocCooldown}T）`,'bad');
+    }
+    if(hp<=0){ doGameOver('オーバーヒートによりコアが焼き切れた'); return; }
+  }
+  // Enemy stun & gas
+  for (const e of enemies) {
+    if (e.stunned  > 0) e.stunned--;
+    if (e.gasTurns > 0) e.gasTurns--;
+  }
+}
+
+/* ===== TURN FLOW ===== */
+function processStepEffects() {
+  if (equip.armor.effect === 'heavy' && stepCount % 3 === 0) {
+    if (power > 0) { 
+      power--; log(`⚖️ 過積載負荷 — 電力 残り ${power}/${maxPower()}`,'warn'); 
+    } else { 
+      hp--; log('⚠ 電力切れ・過積載負荷 (-1 HP)','bad'); sfx('overload'); flashScreen(); 
+      if(hp<=0){ doGameOver('過積載と電力枯渇でコアが潰れた'); return; }
+    }
+  }
+
+  if (stepCount % 5 === 0) {
+    if (power > 0) { 
+      power--; log(`⚡ 5歩消費 — 電力 残り ${power}/${maxPower()}`,'sys'); 
+    } else { 
+      hp--; log('⚠ 電力切れ：コアが過負荷 (-1 HP)','warn'); sfx('overload'); flashScreen(); 
+      if(hp<=0){ doGameOver('電力が枯渇し、コアが焼き切れた'); return; }
+    }
+    
+    if (equip.generator.effect === 'radioactive') {
+       hp--; log('☢️ 放射線ダメージ (-1 HP)','bad'); sfx('damage'); flashScreen(); 
+       if(hp<=0){ doGameOver('放射線によりコアが溶解した'); return; }
+    }
+  }
+}
+
+function act(dx,dy){
+  if(state!=='play')return;
+  const nx=px+dx,ny=py+dy;
+  if(nx<0||ny<0||nx>=MAP_W||ny>=MAP_H||map[ny][nx]===WALL)return;
+  
+  const e=enemyAt(nx,ny);
+  if(e){ 
+    lungePlayer(dx,dy); 
+    playerAttack(e); 
+    if(state==='play'){
+      processConveyors();
+      if(state==='play') tickDebuffs();
+      if(state==='play') enemiesAct();
+    }
+    render(); 
+    return; 
+  }
+  
+  px=nx; py=ny;
+  stepCount++;
+  processStepEffects();
+  if(state!=='play'){ render(); return; }
+
+  // Check trap at new position
+  checkTrapAt(px, py, { isPlayer: true, ref: null });
+  if(state!=='play'){ render(); return; }
+
+  checkFooting();
+
+  // STAIRS: no longer auto-descend — player must press E/F to use them
+  if(map[py][px]===STAIRS){
+    if(!hasArtifact)        log('🪜 階段がある。E/Fで次の階層へ降下できる。','warn');
+    else if(floor<=1)       log('🚪 脱出口だ！ E/Fで地上へ生還せよ。','good');
+    else                    log('🪜 階段がある。E/Fで上の階層へ退避できる。','warn');
+    // Still advance enemy turns after moving onto stairs
+  }
+
+  processConveyors();
+  if(state!=='play'){ render(); return; }
+  tickDebuffs();
+  if(state!=='play'){ render(); return; }
+  enemiesAct();
+  render();
+}
+
+function waitTurn(){
+  if(state!=='play')return;
+  stepCount++;
+  processStepEffects();
+  if(state!=='play'){ render(); return; }
+  
+  checkFooting();
+  
+  processConveyors();
+  if(state!=='play'){ render(); return; }
+  tickDebuffs();
+  if(state!=='play'){ render(); return; }
+  enemiesAct(); 
+  render();
+}
+
+function checkFooting(){
+  // Stairs hint
+  if(map[py][px]===STAIRS){
+    if(!hasArtifact)   log('🪜 階段がある — E/Fキーで次の階層へ降下','warn');
+    else if(floor<=1)  log('🚪 脱出口 — E/Fキーで地上へ生還','good');
+    else               log('🪜 階段がある — E/Fキーで上の階層へ退避','warn');
+    return;
+  }
+  // Terminal hint
+  const term=terminals.find(t=>t.x===px&&t.y===py);
+  if(term && !term.used){ log('🖥️ 旧世代ターミナル — E/Fキーでアクセス','sys'); return; }
+  if(term && term.used) { log('🖥️ ターミナル：機能停止済み','sys'); return; }
+  // Item hint
+  const it = items.find(o=>o.x===px && o.y===py);
+  if(it) {
+    let name, em;
+    if(it.type==='battery')   { name='バッテリー'; em='🔋'; }
+    else if(it.type==='chip') { name='未解析メモリーチップ'; em='💾'; }
+    else if(it.type==='antivirus'){ name='アンチウイルス・ディスク'; em='💿'; }
+    else if(it.type==='artifact'){ name='コア（回収目標）'; em='💠'; }
+    else { name=it.def.name; em=it.def.em; }
+    log(`💡 足元：${em} ${name} — E/Fで取得/使用`,'sys');
+  }
+}
+
+function playerAttack(e){
+  // Hit chance check
+  if(Math.random() < HIT_MISS_CHANCE){
+    sfx('hit');
+    lungePlayer(Math.sign(e.x-px), Math.sign(e.y-py));
+    floatText(e.x,e.y,'MISS','var(--txt-dim)',false);
+    log(`⚠ センサーエラー！ 攻撃が外れた`,'warn');
+    return; // no damage
+  }
+
+  let dmg = atkVal();
+  if(attackBuff>0){
+    dmg += attackBuff;
+    log(`⚡ 強化された一撃！ 威力 +${attackBuff}`,'good');
+    attackBuff = 0;
+  }
+
+  if (equip.weapon.effect === 'power_drain') {
+    if (power > 0) {
+      power--;
+      log(`🪚 チェーンソー駆動：電力 -1`,'warn');
+    } else {
+      log(`⚠ 電力不足で刃が回らない…`,'bad');
+    }
+  }
+
+  e.hp -= dmg;
+  const isKill=e.hp<=0;
+  sfx('hit'); flashCell(e.x,e.y,isKill);
+  floatDamage(e.x,e.y,dmg, isKill?'var(--red)':'var(--orange)', isKill);
+  log(`🤖 ${e.name} に ${dmg} ダメージ`+(baseAtk>0?` (基礎ATK+${baseAtk})`:''),'good');
+  if(isKill) killEnemy(e);
+}
+
+function killEnemy(e){
+  enemies=enemies.filter(x=>x!==e);
+  log(`💥 ${e.name} を破壊した`,'good'); sfx('boom');
+
+  // Scavenger drops its cargo + bonus
+  if(e.kind==='scavenger'){
+    const drops = e.cargo.length > 0 ? [...e.cargo] : [];
+    // Always drop at least 1~2 random items
+    const bonusCount = ri(1, Math.max(1, 2 - drops.length));
+    for(let i=0;i<bonusCount;i++){
+      if(Math.random()<0.5) drops.push({type:'battery'});
+      else { const slot=choice(['weapon','armor','generator']); drops.push({type:'part',def:PARTS[slot][tierFor(floor)]}); }
+    }
+    // Build a list of candidate tiles (the death spot + free neighbours) so
+    // multiple drops don't stack on one tile (only the top item is reachable).
+    const spots = [{x:e.x,y:e.y},{x:e.x+1,y:e.y},{x:e.x-1,y:e.y},{x:e.x,y:e.y+1},{x:e.x,y:e.y-1}]
+      .filter(p => p.x>=0&&p.y>=0&&p.x<MAP_W&&p.y<MAP_H && map[p.y][p.x]===FLOOR
+                   && !items.some(it=>it.x===p.x&&it.y===p.y));
+    for(const it of drops){
+      const spot = spots.shift() || {x:e.x, y:e.y}; // fallback: stack if we run out
+      items.push({...it, x:spot.x, y:spot.y}); // new coords override any stale x/y in cargo
+      const nm=it.type==='battery'?'🔋':it.def?.em??'📦';
+      log(`   ↳ ${nm} カーゴをドロップ`,'good');
+    }
+    return;
+  }
+
+  // Jammer death: clear interference (render() will drop the .jammer-active class
+  // automatically once jammerAlive recomputes to false)
+  if(e.kind==='jammer'){
+    jammerAlive = enemies.some(x=>x.kind==='jammer');
+    log('📡 ジャマー破壊 — 電波妨害が解除された','good');
+  }
+
+  if(!enemyAt(e.x,e.y)&&!items.find(it=>it.x===e.x&&it.y===e.y)){
+    const roll=Math.random();
+    if(roll<0.42){ 
+      const slot=choice(['weapon','armor','generator']); 
+      const pt=PARTS[slot][tierFor(floor)];
+      items.push({x:e.x,y:e.y,type:'part',def:pt}); 
+      log(`   ↳ ${pt.em} パーツを落とした`,'sys'); 
+    }
+    else if(roll<0.78){ items.push({x:e.x,y:e.y,type:'battery'}); log('   ↳ 🔋 バッテリーを落とした','sys'); }
+  }
+}
+
+function enemiesAct(){
+  // Recompute jammer presence each turn
+  jammerAlive = enemies.some(e=>e.kind==='jammer');
+
+  for(const e of enemies.slice()){
+    if(state!=='play')break;
+    // Stun check (from EMP)
+    if (e.stunned > 0) {
+      floatText(e.x, e.y, '⚡STUN', 'var(--amber)', false);
+      continue;
+    }
+    e.tick++; if(e.tick%e.speed!==0)continue;
+
+    // ── SCAVENGER: chases nearest item, ignores player ──
+    if(e.kind === 'scavenger'){
+      scavengerAct(e); continue;
+    }
+
+    const dist=Math.abs(px-e.x)+Math.abs(py-e.y);
+    let aggroLimit = AGGRO;
+    if (equip.armor.effect === 'stealth') aggroLimit = 2;
+    if (e.gasTurns > 0) aggroLimit = TRAP_GAS_AGGRO_REDUCED;
+    if (e.kind === 'hunter') aggroLimit = Infinity; // 追跡者は常にプレイヤーを把握・追尾
+
+    if (dist > aggroLimit) continue;
+    if(dist===1)enemyAttack(e); else enemyStepTo(e);
+
+    // After enemy moves, check if they land on a trap
+    if(state==='play') checkTrapAt(e.x, e.y, { isPlayer: false, ref: e });
+  }
+
+  // Update jammer flag after all actions
+  jammerAlive = enemies.some(e=>e.kind==='jammer');
+}
+
+/* ===== SCAVENGER AI ===== */
+function scavengerAct(e){
+  // Find nearest item
+  let nearest=null, bestDist=Infinity;
+  for(const it of items){
+    if(it.type==='artifact') continue; // コアは絶対に食べさせない（取り逃し防止）
+    const d=Math.abs(it.x-e.x)+Math.abs(it.y-e.y);
+    if(d<bestDist){ bestDist=d; nearest=it; }
+  }
+  if(!nearest){ /* nothing to eat — wander randomly */ return; }
+
+  if(bestDist===0){
+    // On the item: consume it
+    const idx=items.indexOf(nearest);
+    if(idx>=0){
+      items.splice(idx,1);
+      e.cargo.push(nearest);
+      const nm=nearest.type==='battery'?'🔋バッテリー':nearest.type==='chip'?'💾チップ':nearest.type==='antivirus'?'💿アンチウイルス':`${nearest.def.em}${nearest.def.name}`;
+      log(`🗑️ スカベンジャーがアイテムを回収した：${nm}`,'warn');
+    }
+    return;
+  }
+
+  // Move toward nearest item (ignores player position as obstacle)
+  const dxs=Math.sign(nearest.x-e.x),dys=Math.sign(nearest.y-e.y);
+  const adx=Math.abs(nearest.x-e.x),ady=Math.abs(nearest.y-e.y);
+  const moves=[];
+  if(adx>=ady){ if(dxs)moves.push([dxs,0]); if(dys)moves.push([0,dys]); }
+  else         { if(dys)moves.push([0,dys]); if(dxs)moves.push([dxs,0]); }
+  for(const m of moves){
+    const nx=e.x+m[0], ny=e.y+m[1];
+    if(canEnemyMove(nx,ny)){ e.x=nx; e.y=ny; break; }
+  }
+  if(state==='play') checkTrapAt(e.x, e.y, { isPlayer: false, ref: e });
+}
+
+function enemyStepTo(e){
+  const dxs=Math.sign(px-e.x),dys=Math.sign(py-e.y),adx=Math.abs(px-e.x),ady=Math.abs(py-e.y),moves=[];
+  if(adx>=ady){ if(dxs)moves.push([dxs,0]); if(dys)moves.push([0,dys]); }
+  else { if(dys)moves.push([0,dys]); if(dxs)moves.push([dxs,0]); }
+  for(const m of moves)if(canEnemyMove(e.x+m[0],e.y+m[1])){ e.x+=m[0]; e.y+=m[1]; return; }
+}
+
+function enemyAttack(e){
+  const cx=Math.max(0,Math.min(MAP_W-VW,px-(VW>>1)));
+  const cy=Math.max(0,Math.min(MAP_H-VH,py-(VH>>1)));
+  const er=e.y-cy, ec=e.x-cx;
+  if(er>=0&&er<VH&&ec>=0&&ec<VW){
+    const ddx=Math.sign(px-e.x), ddy=Math.sign(py-e.y);
+    cells[er][ec].animate([
+      {transform:'translate(0,0)'},
+      {transform:`translate(${ddx*8}px,${ddy*8}px)`},
+      {transform:'translate(0,0)'}
+    ],{duration:180,easing:'ease-out'});
+  }
+  // Miss check
+  if(Math.random() < HIT_MISS_CHANCE){
+    const ddx2=Math.sign(px-e.x), ddy2=Math.sign(py-e.y);
+    if(er>=0&&er<VH&&ec>=0&&ec<VW){
+      cells[er][ec].animate([{transform:'translate(0,0)'},{transform:`translate(${ddx2*4}px,${ddy2*4}px)`},{transform:'translate(0,0)'}],{duration:180,easing:'ease-out'});
+    }
+    floatText(px,py,'EVADE','var(--green)',false);
+    log(`${e.em} ${e.name} の攻撃を回避した！`,'good');
+    return;
+  }
+  // baseDef damage reduction + OC halving
+  const rawDmg = e.atk;
+  const absorbed = Math.min(rawDmg - 1, defVal()); // always at least 1 damage gets through
+  let finalDmg = rawDmg - absorbed;
+  // Overclock halves incoming damage
+  if(ocTurns > 0) finalDmg = Math.max(1, Math.floor(finalDmg * OC_DEF_MULT));
+  hp -= finalDmg;
+  floatDamage(px,py,finalDmg,'var(--red)',false);
+  shakePlayer();
+  const defNote = absorbed > 0 ? ` (DEF-${absorbed})` : '';
+  log(`${e.em} ${e.name} の攻撃！ コアに ${finalDmg} ダメージ${defNote}`,'bad'); sfx('damage'); flashScreen();
+  if(hp<=0)doGameOver(`${e.name} に撃破された`);
+}
+
+/* ===== ACTION (X / ✋) — unified context-sensitive action ===== */
+function pickupAction(){
+  if(state!=='play')return;
+
+  // ── Priority 1: Item on ground ──
+  const idx = items.findIndex(it=>it.x===px && it.y===py);
+  if(idx >= 0) {
+    // Jammer blocks consumable item use (chip, antivirus)
+    const it = items[idx];
+    if(jammerAlive && (it.type==='chip'||it.type==='antivirus')){
+      sfx('overload');
+      log(`📡 ジャマーの電波妨害によりアイテムを使用できない！`,'bad');
+      render(); return;
+    }
+    pickupItem(px, py);
+    render(); return;
+  }
+
+  // ── Priority 2: Terminal on this tile ──
+  const term = terminals.find(t=>t.x===px&&t.y===py&&!t.used);
+  if(term){
+    activeTerminal = term;
+    $('termPanel').classList.remove('hidden');
+    return; // wait for player choice — no turn consumed yet
+  }
+  // Used/broken terminal underfoot
+  const brokenTerm = terminals.find(t=>t.x===px&&t.y===py&&t.used);
+  if(brokenTerm){
+    log('🖥️ このターミナルは焼き切れて故障している（使用不可）','warn');
+    sfx('overload');
+    return;
+  }
+
+  // ── Priority 3: Stairs ──
+  if(map[py][px]===STAIRS){
+    useStairs(); return;
+  }
+
+  log('足元には何もない','sys');
+}
+
+/* ===== ITEMS / EQUIP ===== */
+
+/* ===== TERMINAL SYSTEM ===== */
+function terminalClose(){
+  $('termPanel').classList.add('hidden');
+  activeTerminal = null;
+}
+
+function terminalChoose(option){
+  // Capture the active terminal BEFORE hiding the panel (terminalClose clears it)
+  const term = activeTerminal;
+  $('termPanel').classList.add('hidden');
+  activeTerminal = null;
+  if(!term || state!=='play') return;
+  term.used = true; // mark used — terminal breaks down after a single access
+
+  // Execute chosen option
+  if(option === 'scan'){
+    // Reveal entire floor
+    for(let y=0;y<MAP_H;y++) for(let x=0;x<MAP_W;x++) explored[y][x]=true;
+    log('📡 フロア・スキャン完了 — 全域マッピング済み','good');
+    floatText(px,py,'SCAN OK','#5daaff',true);
+    sfx('charge');
+  }
+  else if(option === 'power'){
+    const before = power;
+    power = Math.min(maxPower(), power + TERM_POWER_GAIN);
+    log(`⚡ 電力抽出：+${power-before} PW`,'good');
+    floatText(px,py,`+${power-before} PW`,'var(--amber)',true);
+    sfx('charge');
+  }
+  else if(option === 'salvage'){
+    const slot = choice(['weapon','armor','generator']);
+    const pt   = PARTS[slot][tierFor(floor)];
+    // Find a free adjacent tile or use a random floor tile
+    const adj  = [{x:px+1,y:py},{x:px-1,y:py},{x:px,y:py+1},{x:px,y:py-1}]
+                  .find(p=>map[p.y]?.[p.x]===FLOOR && !items.find(i=>i.x===p.x&&i.y===p.y));
+    const drop = adj || {x:px, y:py};
+    items.push({x:drop.x,y:drop.y,type:'part',def:pt});
+    log(`📦 パーツ・サルベージ：${pt.em} ${pt.name} をドロップ`,'good');
+    sfx('equip');
+  }
+
+  // Terminal breaks down permanently after a single use
+  log('🖥️ ターミナルは過負荷で焼き切れ、機能を停止した','sys');
+
+  // Security alert: 30% chance to spawn enemies
+  if(Math.random() < TERM_ALERT_CHANCE){
+    log('[警告] セキュリティアラート！ 敵部隊が召集された','bad');
+    sfx('overload'); flashScreen();
+    const spawnCount = ri(TERM_SPAWN_COUNT[0], TERM_SPAWN_COUNT[1]);
+    let spawned = 0;
+    // Find free tiles adjacent to terminal then radiate outward
+    const candidates = [];
+    for(let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++){
+      const nx=term.x+dx, ny=term.y+dy;
+      if(nx<0||ny<0||nx>=MAP_W||ny>=MAP_H) continue;
+      if(map[ny][nx]!==FLOOR) continue;
+      if(nx===px&&ny===py) continue;
+      if(enemyAt(nx,ny)) continue;
+      if(Math.abs(dx)+Math.abs(dy)<2) continue; // keep some distance
+      candidates.push({x:nx,y:ny});
+    }
+    for(let i=candidates.length-1;i>0;i--){ const j=ri(0,i);[candidates[i],candidates[j]]=[candidates[j],candidates[i]]; }
+    for(const c of candidates){
+      if(spawned>=spawnCount) break;
+      enemies.push(makeEnemy(c.x,c.y,floor));
+      spawned++;
+    }
+    log(`   ↳ ${spawned} 体の敵が緊急展開した`,'bad');
+  }
+
+  // Terminal use costs a turn
+  stepCount++;
+  processStepEffects();
+  if(state!=='play'){ render(); return; }
+  processConveyors();
+  if(state!=='play'){ render(); return; }
+  tickDebuffs();
+  if(state!=='play'){ render(); return; }
+  enemiesAct();
+  render();
+}
+
+function pickupItem(x,y){
+  const idx=items.findIndex(it=>it.x===x&&it.y===y); if(idx<0)return;
+  const it=items[idx]; items.splice(idx,1);
+  if(it.type==='battery'){
+    const before=power; power=Math.min(maxPower(),power+BATTERY_RESTORE);
+    log(`🔋 バッテリー回収：電力 +${power-before}`,'good'); sfx('charge');
+  }
+  else if(it.type==='chip'){
+    installMemoryChip();
+  }
+  else if(it.type==='antivirus'){
+    useAntivirus();
+  }
+  else if(it.type==='artifact'){
+    retrieveArtifact();
+  }
+  else equipPart(it.def);
+}
+
+/* ===== MEMORY CHIP INSTALL ===== */
+function installMemoryChip(){
+  const statType = Math.random() < 0.5 ? 'atk' : 'def';
+  const success  = Math.random() < CHIP_INSTALL_CHANCE;
+  if(success){
+    if(statType === 'atk'){
+      baseAtk += CHIP_ATK_BONUS;
+      floatText(px,py,`+${CHIP_ATK_BONUS} ATK`,'var(--amber)',true);
+      log(`💾 メモリーチップ インストール完了：基礎ATK +${CHIP_ATK_BONUS} → 合計 ${baseAtk}`,'good');
+    } else {
+      baseDef += CHIP_DEF_BONUS;
+      floatText(px,py,`+${CHIP_DEF_BONUS} DEF`,'var(--green)',true);
+      log(`💾 メモリーチップ インストール完了：基礎DEF +${CHIP_DEF_BONUS} → 合計 ${baseDef}`,'good');
+    }
+    sfx('charge');
+  } else {
+    // Malware: reverse effect, floor at minimum
+    if(statType === 'atk'){
+      const before = baseAtk;
+      baseAtk = Math.max(BASE_ATK_MIN, baseAtk - CHIP_ATK_BONUS);
+      const actual = before - baseAtk;
+      floatText(px,py,`-${actual} ATK`,'var(--red)',true);
+      log(`💾 [マルウェア感染] インストール失敗！ 基礎ATK -${actual} → 合計 ${baseAtk}`,'bad');
+    } else {
+      const before = baseDef;
+      baseDef = Math.max(BASE_DEF_MIN, baseDef - CHIP_DEF_BONUS);
+      const actual = before - baseDef;
+      floatText(px,py,`-${actual} DEF`,'var(--red)',true);
+      log(`💾 [マルウェア感染] インストール失敗！ 基礎DEF -${actual} → 合計 ${baseDef}`,'bad');
+    }
+    sfx('overload'); flashScreen();
+  }
+}
+
+/* ===== ANTIVIRUS DISK ===== */
+function useAntivirus(){
+  if(weaponLocked){
+    weaponLocked = false;
+    sfx('repair');
+    floatText(px,py,'CLEAN','var(--green)',true);
+    log(`💿 アンチウイルス展開：武器のマルウェアを除去しました`,'good');
+    log(`   ↳ ${equip.weapon.name} のシステムロックを解除`,'sys');
+  } else {
+    sfx('charge');
+    log(`💿 アンチウイルス起動：システムは正常です（アイテムを消費）`,'sys');
+  }
+}
+
+/* ===== KEY ARTIFACT RETRIEVAL ===== */
+function retrieveArtifact(){
+  hasArtifact = true;
+  sfx('emp'); flashScreen(); healFlash();
+  floatText(px,py,'💠 CORE ACQUIRED','var(--amber)',true);
+  log('💠 機械都市の心臓部「コア」を回収した！','good');
+  log('[!] 施設が崩壊を開始。階段は上昇用に切り替わった — B1まで生還せよ。','warn');
+  log('[!] 追跡者👁️が出現する。立ち止まるな。','bad');
+}
+
+function equipPart(def){
+  const slot=def.slot, old=equip[slot];
+
+  // ===== WEAPON LOCK CHECK =====
+  if(slot === 'weapon' && weaponLocked){
+    sfx('overload');
+    beep(80, 0.2, 'sawtooth', 0.07); // extra error buzz
+    log(`[警告] 武器がシステムロックされており解除できません`,'bad');
+    log(`   ↳ アンチウイルス・ディスク💿で解除可能`,'warn');
+    return; // block swap
+  }
+
+  equip[slot]=def;
+  if(slot==='armor'){ hp=def.hp; log(`⚙ 装甲を換装：${old.name} → ${def.name}`,'good'); log(`   ↳ コアHPを ${def.hp} まで再構築`,'sys'); }
+  else if(slot==='generator'){ power=Math.min(power,def.pwr); log(`⚙ ジェネレータを換装：${old.name} → ${def.name}`,'good'); }
+  else {
+    // Weapon equipped — roll for malware infection
+    const infected = Math.random() < WEAPON_MALWARE_CHANCE;
+    weaponLocked = infected;
+    if(infected){
+      sfx('overload');
+      log(`⚙ 武器を換装：${old.name} → ${def.name}`,'good');
+      log(`[!] マルウェアを検出！ 武器がシステムロックされた`,'bad');
+      log(`   ↳ アンチウイルス・ディスク💿で解除可能`,'warn');
+    } else {
+      log(`⚙ 武器を換装：${old.name} → ${def.name}`,'good');
+    }
+  }
+  
+  if (def.effect === 'power_drain') log('⚠ 警告：攻撃時に電力を激しく消費','warn');
+  if (def.effect === 'heavy') log('⚠ 警告：過積載により電力消費が増大','warn');
+  if (def.effect === 'stealth') log('⚠ 警告：装甲極小化、索敵回避率上昇','warn');
+  if (def.effect === 'radioactive') log('⚠ 警告：放射線漏出。継続ダメージ発生','warn');
+
+  if(slot !== 'weapon' || !weaponLocked) log(`   ↳ ${old.name} は破棄された`,'sys');
+  sfx('equip'); flashSlot(slot);
+}
+
+/* ===== SCRAP SYSTEM ===== */
+function scrapItem() {
+  if (state !== 'play') return;
+  const targets = [
+    {x: px, y: py}, {x: px, y: py-1}, {x: px, y: py+1}, {x: px-1, y: py}, {x: px+1, y: py}
+  ];
+  
+  let targetItemIndex = -1;
+  for (const t of targets) {
+    targetItemIndex = items.findIndex(it => it.x === t.x && it.y === t.y);
+    if (targetItemIndex >= 0) break;
+  }
+  
+  if (targetItemIndex >= 0) {
+    const it = items[targetItemIndex];
+    items.splice(targetItemIndex, 1);
+    
+    const em = it.type === 'battery' ? '🔋' : it.type === 'chip' ? '💾' : it.type === 'antivirus' ? '💿' : it.type === 'artifact' ? '💠' : it.def.em;
+    if(it.type === 'battery'){
+      const before = power;
+      power = Math.min(maxPower(), power + SCRAP_BATTERY_PWR);
+      log(`${em} バッテリーを分解：電力 +${power-before}`, 'good');
+      floatText(it.x, it.y, `+${power-before} PW`, 'var(--orange)');
+    } else if(it.type === 'chip' || it.type === 'antivirus' || it.type === 'artifact'){
+      // Cannot scrap consumable tech / the core — put it back
+      items.push(it);
+      log(`${em} これは分解できない。E/Fキーで回収/使用せよ`,'warn');
+      return;
+    } else if(it.def.slot === 'armor'){
+      const before = hp;
+      hp = Math.min(maxHP(), hp + SCRAP_ARMOR_HP);
+      log(`${em} 装甲を分解：HP +${hp-before}`, 'good');
+      floatText(it.x, it.y, `+${hp-before} HP`, 'var(--green)');
+    } else if(it.def.slot === 'weapon'){
+      attackBuff += SCRAP_WEAPON_ATK;
+      const hb = Math.min(maxHP(), hp+SCRAP_WEAPON_HP)-hp; hp += hb;
+      const pb = Math.min(maxPower(), power+SCRAP_WEAPON_PW)-power; power += pb;
+      log(`${em} 武器を分解：次の一撃 +${SCRAP_WEAPON_ATK}（HP+${hb}/電力+${pb}）`, 'good');
+      floatText(it.x, it.y, `⚡+${SCRAP_WEAPON_ATK}`, 'var(--amber)');
+    } else {
+      const before = power;
+      power = Math.min(maxPower(), power + SCRAP_GEN_PWR);
+      log(`${em} 動力を分解：電力 +${power-before}`, 'good');
+      floatText(it.x, it.y, `+${power-before} PW`, 'var(--orange)');
+    }
+    sfx('scrap');
+    flashCell(it.x, it.y, false);
+    
+    stepCount++;
+    processStepEffects();
+    
+    if (state === 'play') {
+      processConveyors();
+    }
+    if (state === 'play') {
+      tickDebuffs();
+      enemiesAct();
+      render();
+    }
+  } else {
+    log('周囲に分解できるアイテムが無い','sys');
+  }
+}
+
+/* ===== REST / REPAIR ===== */
+function restRepair(){
+  if(state!=='play')return;
+  if(hp>=maxHP()){ log('コアHPは最大。修復の必要はない','sys'); return; }
+  if(power<REST_POWER_COST){ log(`⚠ 電力不足：修復には電力 ${REST_POWER_COST} が必要（現在 ${power}）`,'warn'); return; }
+  power -= REST_POWER_COST;
+  const before = hp;
+  hp = Math.min(maxHP(), hp + REST_HP_GAIN);
+  log(`🔧 自己修復：電力 -${REST_POWER_COST} / HP +${hp-before}`,'good');
+  sfx('repair'); healFlash(); floatText(px,py,`+${hp-before} HP`,'var(--green)');
+  stepCount++;
+  processStepEffects();
+  if(state!=='play'){ render(); return; }
+  checkFooting();
+  processConveyors();
+  if(state!=='play'){ render(); return; }
+  tickDebuffs();
+  if(state!=='play'){ render(); return; }
+  enemiesAct();
+  render();
+}
+
+/* ===== FLOOR / END ===== */
+/* Stairs are context-sensitive: DIVE (down) until the core is taken, then RETURN (up). */
+function useStairs(){
+  if(hasArtifact){
+    // ----- RETURN PHASE: 上昇して地上を目指す -----
+    if(floor<=1){ doVictory(); return; }   // B1 の脱出口に到達 → 生還クリア
+    floor--;
+    log(`🪜 施設崩壊中… B${floor} へ緊急上昇…`,'warn');
+    sfx('descend');
+    generateFloor(floor);   // 崩壊設定：上昇のたびにフロアを新規生成
+    log('⚠ フロアが崩壊・再構成された。追跡者👁️に注意。','bad');
+    render();
+  } else {
+    // ----- DIVE PHASE: より深く降下する -----
+    if(floor>=MAX_FLOOR){
+      log('🚫 最深部だ。これ以上は降りられない。コア💠を回収せよ。','warn');
+      sfx('overload');
+      return;
+    }
+    floor++;
+    log(`🪜 階段を発見。 B${floor} へ降下…`,'sys');
+    sfx('descend');
+    generateFloor(floor);
+    render();
+  }
+}
+function descend(){ useStairs(); }  // 後方互換エイリアス
+function doGameOver(reason){
+  state='over';
+  $('goReason').textContent=reason;
+  $('goStat').textContent=`到達深度 B${floor} ／ 武器 ${equip.weapon.name}`;
+  setTimeout(()=>$('gameover').classList.remove('hidden'),450);
+}
+function doVictory(){
+  state='win';
+  $('vicStat').textContent=`最終装備：${equip.weapon.name}・${equip.armor.name}・${equip.generator.name}`;
+  $('victory').classList.remove('hidden');
+}
+
+/* ===== RENDER (camera viewport) ===== */
+function buildGrid(){
+  mapEl.innerHTML=''; cells=[];
+  for(let r=0;r<VH;r++){
+    const row=[];
+    for(let c=0;c<VW;c++){ const cell=document.createElement('div'); cell.className='cell unseen'; mapEl.appendChild(cell); row.push(cell); }
+    cells.push(row);
+  }
+}
+function render(){
+  computeFOV();
+  camX=Math.max(0,Math.min(MAP_W-VW,px-(VW>>1)));
+  camY=Math.max(0,Math.min(MAP_H-VH,py-(VH>>1)));
+  for(let r=0;r<VH;r++)for(let c=0;c<VW;c++){
+    const x=camX+c, y=camY+r, cell=cells[r][c];
+    if(!explored[y][x]){ cell.className='cell unseen'; cell.textContent=''; continue; }
+    const vis=visible[y][x]; let cls='cell', ch=''; const t=map[y][x];
+    if(t===WALL){ cls+=' wall'; ch='🟫'; }
+    else if(t===STAIRS){ cls+=' stairs'; ch=(hasArtifact && floor<=1) ? '🚪' : '🪜'; }
+    else { cls+=' floor'; ch='⬛'; }
+
+    // Traps are HIDDEN until an entity (player or enemy) steps on them.
+    // Once revealed, conveyors and gas remain visible; EMP detonates and is removed.
+    const trap = trapAt(x, y);
+    if (trap && trap.revealed && (vis || trap.type === 'conveyor')) {
+      if (trap.type === 'emp') {
+        cls = 'cell trap-emp'; ch = '💥';
+      } else if (trap.type === 'conveyor') {
+        const dirEmoji = { n:'⬆️', s:'⬇️', e:'➡️', w:'⬅️' }[trap.dir];
+        cls = `cell trap-conv-${trap.dir}`; ch = dirEmoji;
+      } else if (trap.type === 'gas') {
+        cls = 'cell trap-gas'; ch = '💨';
+      }
+    }
+
+    if(vis){
+      if(x===px&&y===py){ cls='cell player'; ch='🤖'; }
+      else {
+        const e=enemyAt(x,y), it=items.find(o=>o.x===x&&o.y===y);
+        const term=terminals.find(t=>t.x===x&&t.y===y);
+        if(e){
+          if(e.kind==='jammer')       cls='cell jammer-enemy';
+          else if(e.kind==='scavenger') cls='cell scavenger-enemy';
+          else if(e.kind==='hunter')  cls='cell hunter-enemy';
+          else cls='cell enemy';
+          ch=e.em;
+        }
+        else if(term){
+          cls=term.used?'cell terminal-used':'cell terminal'; ch='🖥️';
+        }
+        else if(it){ 
+          if(it.type==='battery'){     cls='cell battery';   ch='🔋'; }
+          else if(it.type==='chip'){   cls='cell chip';      ch='💾'; }
+          else if(it.type==='antivirus'){ cls='cell antivirus'; ch='💿'; }
+          else if(it.type==='artifact'){ cls='cell artifact'; ch='💠'; }
+          else {                       cls='cell part';      ch=it.def.em; }
+        }
+        // Stairs prompt glow when player is on them
+        else if(t===STAIRS && x===px && y===py){ cls='cell stairs-ready'; ch=(hasArtifact && floor<=1)?'🚪':'🪜'; }
+      }
+    } else {
+      // Show terminal even when dimmed if explored
+      const term=terminals.find(t=>t.x===x&&t.y===y);
+      if(term){ cls=(term.used?'cell terminal-used':'cell terminal')+' dim'; ch='🖥️'; }
+      else cls+=' dim';
+    }
+    cell.className=cls; cell.textContent=ch;
+  }
+
+  // Gas vignette overlay
+  const vigEl = document.getElementById('gasVignette');
+  if (vigEl) vigEl.classList.toggle('active', playerGasTurns > 0);
+
+  // Jammer glitch: apply/remove class on .wrap
+  const wrapEl = document.querySelector('.wrap');
+  jammerAlive = enemies.some(e=>e.kind==='jammer');
+  if(wrapEl) wrapEl.classList.toggle('jammer-active', jammerAlive);
+
+  // Trap + OC status badges
+  const trapStatusEl = document.getElementById('trapStatus');
+  if (trapStatusEl) {
+    trapStatusEl.innerHTML = '';
+    if (playerGasTurns > 0) {
+      const b = document.createElement('span'); b.className='trap-badge gas'; b.textContent=`💨${playerGasTurns}T`; trapStatusEl.appendChild(b);
+    }
+    if(ocTurns > 0){
+      const b = document.createElement('span'); b.className='trap-badge oc-active'; b.textContent=`⚡OC ${ocTurns}T`; trapStatusEl.appendChild(b);
+    }
+    if(ocCooldown > 0){
+      const b = document.createElement('span'); b.className='trap-badge oc-cool'; b.textContent=`🔥OH ${ocCooldown}T`; trapStatusEl.appendChild(b);
+    }
+    if(jammerAlive){
+      const b = document.createElement('span'); b.className='trap-badge emp'; b.textContent='📡JAM'; trapStatusEl.appendChild(b);
+    }
+    if(hasArtifact){
+      const b = document.createElement('span'); b.className='trap-badge'; b.style.cssText='color:var(--amber);border-color:rgba(255,193,77,.5);background:rgba(40,20,0,.7)'; b.textContent='💠RETURN'; trapStatusEl.appendChild(b);
+    }
+    if(map[py][px]===STAIRS){
+      const lbl = !hasArtifact ? '🪜E↓' : (floor<=1 ? '🚪E脱出' : '🪜E↑');
+      const b = document.createElement('span'); b.className='trap-badge'; b.style.cssText='color:var(--green);border-color:rgba(93,255,155,.4);background:rgba(0,20,10,.6)'; b.textContent=lbl; trapStatusEl.appendChild(b);
+    }
+  }
+
+  // OC button state
+  const ocBtnEl = document.getElementById('ocBtn');
+  if(ocBtnEl){
+    if(ocTurns>0)         { ocBtnEl.className='ready active'; ocBtnEl.textContent=`⚡${ocTurns}T`; ocBtnEl.disabled=true; }
+    else if(ocCooldown>0) { ocBtnEl.className='ready cooldown'; ocBtnEl.textContent=`🔥${ocCooldown}T`; ocBtnEl.disabled=true; }
+    else                  { ocBtnEl.className='ready'; ocBtnEl.innerHTML='⚡OC<span style="font-size:8px;opacity:.7"> C</span>'; ocBtnEl.disabled=(power<OC_COST); }
+  }
+
+  renderHUD();
+
+  // Jammer: scramble HP/PW number display (must run AFTER renderHUD)
+  if(jammerAlive){
+    const glitchChars='▓░▒█▀▄╬╪◊♦♣♠';
+    const rndStr=(len)=>Array.from({length:len},()=>glitchChars[Math.floor(Math.random()*glitchChars.length)]).join('');
+    const hpEl=$('hpNum'), pwEl=$('pwNum');
+    if(hpEl) hpEl.textContent=rndStr(5);
+    if(pwEl) pwEl.textContent=rndStr(5);
+  }
+}
+function renderHUD(){
+  $('depth').textContent=floor;
+  const mhp=maxHP(), mpw=maxPower();
+  $('hpNum').textContent=`${Math.max(0,hp)}/${mhp}`;
+  $('pwNum').textContent=`${power}/${mpw} ${'▪'.repeat(stepCount%5)}${'▫'.repeat(5-stepCount%5)}`;
+  const _buffed=attackBuff>0, _shownAtk=atkVal()+(_buffed?attackBuff:0);
+  $('atkVal').textContent=_shownAtk;
+  $('atkVal').style.color=_buffed?'var(--amber)':'';
+  const hpr=Math.max(0,hp)/mhp, hf=$('hpFill'); hf.style.width=(hpr*100)+'%';
+  hf.className='fill hp'+(hpr<=0.25?' low':hpr<=0.55?' mid':'');
+  const pwr=power/mpw, pf=$('pwFill'); pf.style.width=(Math.max(0,pwr)*100)+'%';
+  pf.className='fill pw'+(power<=0?' empty':'');
+  setSlot('slotW',equip.weapon,_shownAtk);
+  $('slotW').classList.toggle('charged',_buffed);
+  // Weapon malware lock visual
+  $('slotW').classList.toggle('malware', weaponLocked);
+  setSlot('slotA',equip.armor,equip.armor.hp);
+  setSlot('slotG',equip.generator,equip.generator.pwr);
+
+  // Base stat chips display
+  const chipEl = document.getElementById('statChips');
+  if(chipEl){
+    chipEl.innerHTML = '';
+    if(baseAtk > 0 || baseDef > 0){
+      if(baseAtk>0){ const p=document.createElement('span'); p.className='stat-pip atk'; p.textContent=`ATK+${baseAtk}`; chipEl.appendChild(p); }
+      if(baseDef>0){ const p=document.createElement('span'); p.className='stat-pip def'; p.textContent=`DEF+${baseDef}`; chipEl.appendChild(p); }
+    }
+  }
+}
+function setSlot(id,def,stat){ const el=$(id); el.querySelector('.eem').textContent=def.em; el.querySelector('.eval').textContent=stat; }
+
+/* ===== FX ===== */
+function _cam(){ return { cx:Math.max(0,Math.min(MAP_W-VW,px-(VW>>1))), cy:Math.max(0,Math.min(MAP_H-VH,py-(VH>>1))) }; }
+function flashCell(x,y,death=false){
+  const {cx,cy}=_cam(); const r=y-cy,c=x-cx; if(r<0||r>=VH||c<0||c>=VW) return;
+  cells[r][c].animate([
+    {transform:'scale(1)',   filter:'brightness(1)'},
+    {transform:`scale(${death?1.9:1.3})`, filter:`brightness(${death?6:3}) saturate(3)`},
+    {transform:'scale(1)',   filter:'brightness(1)'}
+  ],{duration:death?360:220, easing:'ease-out'});
+}
+function lungePlayer(dx,dy){
+  const {cx,cy}=_cam(); const r=py-cy, c=px-cx; if(r<0||r>=VH||c<0||c>=VW) return;
+  cells[r][c].animate([
+    {transform:'translate(0,0)'},
+    {transform:`translate(${dx*10}px,${dy*10}px)`},
+    {transform:'translate(0,0)'}
+  ],{duration:180, easing:'ease-out'});
+}
+function shakePlayer(){
+  const {cx,cy}=_cam(); const r=py-cy, c=px-cx; if(r<0||r>=VH||c<0||c>=VW) return;
+  cells[r][c].animate([
+    {transform:'translate(0,0)'},
+    {transform:'translate(-6px, 1px)'},
+    {transform:'translate( 6px,-1px)'},
+    {transform:'translate(-4px, 1px)'},
+    {transform:'translate( 3px,-1px)'},
+    {transform:'translate(0,0)'}
+  ],{duration:300, easing:'ease-out'});
+}
+function floatDamage(x,y,dmg,color,big=false){
+  const {cx,cy}=_cam(); const r=y-cy, c=x-cx; if(r<0||r>=VH||c<0||c>=VW) return;
+  const rect=cells[r][c].getBoundingClientRect();
+  const el=document.createElement('div');
+  el.className='dmg-float';
+  el.textContent='-'+dmg;
+  el.style.cssText=`left:${rect.left+rect.width/2}px;top:${rect.top}px;color:${color};font-size:${big?21:14}px`;
+  document.body.appendChild(el);
+  el.addEventListener('animationend',()=>el.remove());
+}
+function floatText(x,y,text,color,big=false){
+  const {cx,cy}=_cam(); const r=y-cy, c=x-cx; if(r<0||r>=VH||c<0||c>=VW) return;
+  const rect=cells[r][c].getBoundingClientRect();
+  const el=document.createElement('div');
+  el.className='dmg-float';
+  el.textContent=text;
+  el.style.cssText=`left:${rect.left+rect.width/2}px;top:${rect.top}px;color:${color};font-size:${big?20:13}px`;
+  document.body.appendChild(el);
+  el.addEventListener('animationend',()=>el.remove());
+}
+function healFlash(){
+  const {cx,cy}=_cam(); const r=py-cy, c=px-cx; if(r<0||r>=VH||c<0||c>=VW) return;
+  cells[r][c].animate([
+    {filter:'brightness(1)'},
+    {filter:'brightness(2.4) drop-shadow(0 0 7px #5dff9b)'},
+    {filter:'brightness(1)'}
+  ],{duration:420, easing:'ease-out'});
+}
+function flashScreen(){ document.body.animate([{boxShadow:'inset 0 0 0 rgba(255,40,40,0)'},{boxShadow:'inset 0 0 120px rgba(255,40,40,.45)'},{boxShadow:'inset 0 0 0 rgba(255,40,40,0)'}],{duration:260}); }
+function flashSlot(slot){ const id=slot==='weapon'?'slotW':slot==='armor'?'slotA':'slotG'; const el=$(id); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+function log(msg,cls){ const d=document.createElement('div'); d.className='l '+(cls||'sys'); d.textContent=msg; logEl.appendChild(d); while(logEl.children.length>50)logEl.removeChild(logEl.firstChild); logEl.scrollTop=logEl.scrollHeight; }
+
+/* ===== AUDIO ===== */
+let audioCtx=null, muted=false;
+function actx(){ if(!audioCtx){ try{ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ audioCtx=null; } } return audioCtx; }
+function beep(freq,dur,type,vol){ if(muted)return; const ctx=actx(); if(!ctx)return; const o=ctx.createOscillator(),g=ctx.createGain(); o.type=type||'square'; o.frequency.value=freq; o.connect(g); g.connect(ctx.destination); const t=ctx.currentTime; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol||0.05,t+0.005); g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.start(t); o.stop(t+dur+0.02); }
+function sfx(k){
+  switch(k){
+    case 'hit': beep(220,0.06,'square',0.05); break;
+    case 'boom': beep(90,0.18,'sawtooth',0.06); setTimeout(()=>beep(60,0.16,'sawtooth',0.05),40); break;
+    case 'damage': beep(140,0.12,'sawtooth',0.06); break;
+    case 'charge': beep(520,0.07,'sine',0.05); setTimeout(()=>beep(780,0.09,'sine',0.05),60); break;
+    case 'equip': beep(440,0.05,'triangle',0.05); setTimeout(()=>beep(660,0.07,'triangle',0.05),50); break;
+    case 'descend': beep(330,0.1,'sine',0.05); setTimeout(()=>beep(220,0.14,'sine',0.05),90); break;
+    case 'overload': beep(110,0.1,'square',0.06); break;
+    case 'emp': beep(60,0.08,'square',0.07); setTimeout(()=>beep(180,0.12,'sawtooth',0.06),30); setTimeout(()=>beep(440,0.18,'sine',0.04),80); break;
+    case 'conveyor': beep(300,0.05,'sawtooth',0.04); break;
+    case 'gas': beep(200,0.15,'sine',0.03); setTimeout(()=>beep(180,0.2,'sine',0.03),100); break;
+    case 'scrap': beep(200,0.06,'square',0.06); setTimeout(()=>beep(340,0.08,'sawtooth',0.06),40); break;
+    case 'repair': beep(420,0.08,'sine',0.05); setTimeout(()=>beep(560,0.1,'sine',0.05),70); setTimeout(()=>beep(740,0.12,'sine',0.05),150); break;
+  }
+}
+
+/* ===== INPUT ===== */
+const KEYMAP={ 'ArrowUp':[0,-1],'ArrowDown':[0,1],'ArrowLeft':[-1,0],'ArrowRight':[1,0],
+  'w':[0,-1],'s':[0,1],'a':[-1,0],'d':[1,0],'W':[0,-1],'S':[0,1],'A':[-1,0],'D':[1,0],
+  'k':[0,-1],'j':[0,1],'h':[-1,0],'l':[1,0],
+  // --- actions (WASDから手を離さず押せる配置) ---
+  'q':[0,0,'scrap'],     'Q':[0,0,'scrap'],      // 分解
+  'r':[0,0,'repair'],    'R':[0,0,'repair'],     // 修復
+  'e':[0,0,'pickup'],    'E':[0,0,'pickup'],     // インタラクト（拾う/階段/端末）
+  'f':[0,0,'pickup'],    'F':[0,0,'pickup'],     // インタラクト（代替キー）
+  'c':[0,0,'overclock'], 'C':[0,0,'overclock'],  // オーバークロック
+  ' ':[0,0,'wait']                               // 待機
+};
+
+window.addEventListener('keydown',e=>{ 
+  // ESC：開いているUI（ターミナルパネル）を閉じる
+  if(e.key==='Escape'){
+    if(!$('termPanel').classList.contains('hidden')){ e.preventDefault(); terminalClose(); }
+    return;
+  }
+  const m=KEYMAP[e.key]; 
+  if(m){ 
+    e.preventDefault(); 
+    if (m[2] === 'scrap') {
+      scrapItem();
+    } else if (m[2] === 'wait') {
+      waitTurn();
+    } else if (m[2] === 'pickup') {
+      pickupAction();
+    } else if (m[2] === 'repair') {
+      restRepair();
+    } else if (m[2] === 'overclock') {
+      activateOverclock();
+    } else {
+      act(m[0],m[1]); 
+    }
+  } 
+});
+
+document.querySelectorAll('button[data-dir]').forEach(b=>{
+  b.addEventListener('click',()=>{ 
+    const d=b.dataset.dir;
+    if(d==='up') act(0,-1); 
+    else if(d==='down') act(0,1); 
+    else if(d==='left') act(-1,0); 
+    else if(d==='right') act(1,0);
+    else if(d==='scrap') scrapItem();
+    else if(d==='wait') waitTurn();
+    else if(d==='pickup') pickupAction();
+    else if(d==='repair') restRepair();
+  });
+});
+
+$('muteBtn').addEventListener('click',()=>{ muted=!muted; $('muteBtn').textContent=muted?'🔇 SOUND: OFF':'🔊 SOUND: ON'; if(!muted)actx(); });
+
+/* Terminal panel + Overclock button bindings */
+$('termScan').addEventListener('click',()=>terminalChoose('scan'));
+$('termPower').addEventListener('click',()=>terminalChoose('power'));
+$('termSalvage').addEventListener('click',()=>terminalChoose('salvage'));
+$('termCancel').addEventListener('click',()=>terminalClose());
+$('ocBtn').addEventListener('click',()=>activateOverclock());
+
+/* ===== START ===== */
+function newGame(){
+  floor=1; stepCount=0; attackBuff=0; equip={weapon:PARTS.weapon[0],armor:PARTS.armor[0],generator:PARTS.generator[0]};
+  hp=maxHP(); power=maxPower(); state='play'; logEl.innerHTML='';
+  traps=[]; terminals=[]; playerGasTurns=0;
+  baseAtk=0; baseDef=0; weaponLocked=false; hasArtifact=false;
+  ocTurns=0; ocCooldown=0; jammerAlive=false; activeTerminal=null;
+  generateFloor(1); buildGrid(); render();
+  log('システム起動。スクラップの海へダイブ開始。','good');
+  log('B1 — 廃墟最上層。🪜に乗りE/Fで降下。🖥️もE/Fで操作。','sys');
+  log('目標：B10でコア💠を回収→B1まで生還。回収後は階段が上昇用に。','warn');
+  log('⚡OC発動でATK×2/被ダメ½（3T）→オーバーヒート反動(3T)','warn');
+}
+$('startBtn').addEventListener('click',()=>{ actx(); $('intro').classList.add('hidden'); newGame(); });
+$('retryBtn').addEventListener('click',()=>{ $('gameover').classList.add('hidden'); newGame(); });
+$('vicBtn').addEventListener('click',()=>{ $('victory').classList.add('hidden'); newGame(); });
+
+// preview map behind intro
+floor=1; equip={weapon:PARTS.weapon[0],armor:PARTS.armor[0],generator:PARTS.generator[0]};
+hp=maxHP(); power=maxPower(); state='intro';
+traps=[]; terminals=[]; playerGasTurns=0; baseAtk=0; baseDef=0; weaponLocked=false; hasArtifact=false;
+ocTurns=0; ocCooldown=0; jammerAlive=false; activeTerminal=null;
+generateFloor(1); buildGrid(); render();
+</script>
+</body>
+</html>
