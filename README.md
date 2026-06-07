@@ -153,5 +153,5 @@ chrome-delver/
 
 ## クレジット
 
-- ゲームデザイン・実装: `<your-name>`
+- ゲームデザイン・実装: `Reloot`
 - フォント: [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) / [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono)
